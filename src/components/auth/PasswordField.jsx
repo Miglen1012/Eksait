@@ -31,7 +31,6 @@ export default function PasswordField({ label, name, autoComplete }) {
           type={isVisible ? "text" : "password"}
           name={name}
           autoComplete={autoComplete}
-          required
         />
         <button
           type="button"

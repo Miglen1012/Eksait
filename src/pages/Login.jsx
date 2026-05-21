@@ -11,6 +11,7 @@ import PasswordField from "../components/auth/PasswordField";
 import "../styles/auth.css";
 
 const LOGIN_LOCK_SECONDS = 60;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Login() {
   const [messages, setMessages] = useState([]);
@@ -41,11 +42,29 @@ export default function Login() {
 
     const formData = new FormData(event.currentTarget);
     const payload = {
-      email: formData.get("email"),
-      password: formData.get("password"),
+      email: String(formData.get("email") || "").trim(),
+      password: String(formData.get("password") || ""),
       remember: Boolean(formData.get("remember")),
       session_id: getCartSessionId(),
     };
+
+    const validationErrors = [];
+
+    if (!payload.email) {
+      validationErrors.push("Въведете имейл адрес.");
+    } else if (!EMAIL_PATTERN.test(payload.email)) {
+      validationErrors.push("Въведете валиден имейл адрес.");
+    }
+
+    if (!payload.password) {
+      validationErrors.push("Въведете парола.");
+    }
+
+    if (validationErrors.length > 0) {
+      setMessages(validationErrors);
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const data = await apiRequest("/api/login", {
@@ -94,7 +113,7 @@ export default function Login() {
           <p>Влезте в профила си, за да преглеждате поръчки, данни за доставка и клиентски настройки.</p>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <h2>Вход в профила</h2>
 
           {messages.length > 0 && (
@@ -113,7 +132,7 @@ export default function Login() {
 
           <label>
             Имейл
-            <input type="email" name="email" autoComplete="email" required />
+            <input type="email" name="email" autoComplete="email" />
           </label>
 
           <PasswordField label="Парола" name="password" autoComplete="current-password" />

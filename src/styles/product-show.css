@@ -123,6 +123,16 @@
 .product-gallery-arrow {
   top: 50%;
   transform: translateY(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.18s ease,
+    opacity 0.2s ease,
+    visibility 0.2s ease;
 }
 
 .product-gallery-arrow--prev {
@@ -131,6 +141,13 @@
 
 .product-gallery-arrow--next {
   right: 14px;
+}
+
+.product-show-image-wrap:hover .product-gallery-arrow,
+.product-show-image-wrap:focus-within .product-gallery-arrow {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .product-gallery-arrow:hover,
@@ -186,9 +203,6 @@
   gap: 16px;
   align-content: start;
   padding: clamp(24px, 3vw, 34px);
-  background: linear-gradient(165deg, #ffffff 0%, #f7fbff 100%);
-  border: 0;
-  border-radius: 10px;
 }
 
 .product-show-info h1 {

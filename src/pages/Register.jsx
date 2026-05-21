@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { apiRequest, getFieldErrors, getTokenFromResponse, handleApiErrorByStatus, normalizeErrors, setAuthToken } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
-import { PHONE_ERROR, PHONE_PATTERN, isValidPhone, normalizePhone } from "../utils/validation";
+import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/auth.css";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Register() {
   const [messages, setMessages] = useState([]);
@@ -14,20 +16,51 @@ export default function Register() {
     setMessages([]);
 
     const formData = new FormData(event.currentTarget);
+    const name = String(formData.get("name") || "").trim();
+    const email = String(formData.get("email") || "").trim();
     const phone = normalizePhone(formData.get("phone"));
+    const password = String(formData.get("password") || "");
+    const passwordConfirmation = String(formData.get("password_confirmation") || "");
+    const validationErrors = [];
 
-    if (!isValidPhone(phone)) {
-      setMessages([PHONE_ERROR]);
+    if (!name) {
+      validationErrors.push("Въведете име.");
+    }
+
+    if (!email) {
+      validationErrors.push("Въведете имейл адрес.");
+    } else if (!EMAIL_PATTERN.test(email)) {
+      validationErrors.push("Въведете валиден имейл адрес.");
+    }
+
+    if (!isValidPhone(phone, { required: true })) {
+      validationErrors.push(PHONE_ERROR);
+    }
+
+    if (!password) {
+      validationErrors.push("Въведете парола.");
+    }
+
+    if (!passwordConfirmation) {
+      validationErrors.push("Повторете паролата.");
+    }
+
+    if (password && passwordConfirmation && password !== passwordConfirmation) {
+      validationErrors.push("Паролите не съвпадат.");
+    }
+
+    if (validationErrors.length > 0) {
+      setMessages(validationErrors);
       setSubmitting(false);
       return;
     }
 
     const payload = {
-      name: formData.get("name"),
-      email: formData.get("email"),
+      name,
+      email,
       phone,
-      password: formData.get("password"),
-      password_confirmation: formData.get("password_confirmation"),
+      password,
+      password_confirmation: passwordConfirmation,
     };
 
     try {
@@ -69,7 +102,7 @@ export default function Register() {
           </p>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <h2>Създаване на профил</h2>
 
           {messages.length > 0 && (
@@ -82,17 +115,17 @@ export default function Register() {
 
           <label>
             Име
-            <input type="text" name="name" autoComplete="name" required />
+            <input type="text" name="name" autoComplete="name" />
           </label>
 
           <label>
             Имейл
-            <input type="email" name="email" autoComplete="email" required />
+            <input type="email" name="email" autoComplete="email" />
           </label>
 
           <label>
             Телефон
-            <input type="tel" name="phone" autoComplete="tel" maxLength="10" pattern={PHONE_PATTERN} title={PHONE_ERROR} />
+            <input type="tel" name="phone" autoComplete="tel" maxLength="10" title={PHONE_ERROR} />
           </label>
 
           <PasswordField label="Парола" name="password" autoComplete="new-password" />

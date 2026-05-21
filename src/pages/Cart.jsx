@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest, getApiBaseUrl, getAuthToken, normalizeErrors } from "../api/client";
 import { getPrimaryImage, normalizeProducts } from "../utils/products";
-import { PHONE_ERROR, PHONE_PATTERN, isValidPhone, normalizePhone } from "../utils/validation";
+import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/cart.css";
 
 const initialCheckout = {
@@ -1056,7 +1056,7 @@ export default function Cart() {
               </div>
             </section>
 
-            <form className="checkout-form" onSubmit={submitCheckout}>
+            <form className="checkout-form" onSubmit={submitCheckout} noValidate>
               <h2>Данни за поръчка</h2>
 
               <div className="checkout-grid">
@@ -1067,7 +1067,6 @@ export default function Cart() {
                     value={customerName}
                     onChange={updateCheckoutField}
                     readOnly={isLoggedIn}
-                    required={!isLoggedIn}
                   />
                 </label>
                 <label>
@@ -1078,7 +1077,6 @@ export default function Cart() {
                     value={customerEmail}
                     onChange={updateCheckoutField}
                     readOnly={isLoggedIn}
-                    required={!isLoggedIn}
                   />
                 </label>
                 <label>
@@ -1090,9 +1088,7 @@ export default function Cart() {
                     onChange={updateCheckoutField}
                     readOnly={isLoggedIn}
                     maxLength="10"
-                    pattern={PHONE_PATTERN}
                     title={PHONE_ERROR}
-                    required={!isLoggedIn}
                   />
                 </label>
                 <label>
@@ -1106,18 +1102,18 @@ export default function Cart() {
                 </label>
                 <label>
                   Град
-                  <input name="shipping_city" value={checkout.shipping_city} onChange={updateCheckoutField} required />
+                  <input name="shipping_city" value={checkout.shipping_city} onChange={updateCheckoutField} />
                 </label>
 
                 {checkout.shipping_method === "address" && (
                   <>
                     <label>
                       Пощенски код
-                      <input name="shipping_postcode" value={checkout.shipping_postcode} onChange={updateCheckoutField} required />
+                      <input name="shipping_postcode" value={checkout.shipping_postcode} onChange={updateCheckoutField} />
                     </label>
                     <label className="checkout-wide">
                       Адрес за доставка
-                      <input name="shipping_address" value={checkout.shipping_address} onChange={updateCheckoutField} required />
+                      <input name="shipping_address" value={checkout.shipping_address} onChange={updateCheckoutField} />
                     </label>
                   </>
                 )}

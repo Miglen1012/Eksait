@@ -128,6 +128,19 @@
   box-shadow: 0 0 0 4px rgba(215, 25, 32, 0.1);
 }
 
+.contact-form :is(input, textarea)[aria-invalid="true"] {
+  border-color: #ef4444;
+  background: #fffafa;
+}
+
+.field-error {
+  margin: -2px 0 0;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .contact-form input:disabled {
   color: #4b5563;
   background: #f3f4f6;

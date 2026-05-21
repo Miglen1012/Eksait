@@ -10,10 +10,15 @@ function getSearchQuery() {
   return new URLSearchParams(window.location.search).get("q")?.trim() || "";
 }
 
+function getPageFromSearch() {
+  const rawPage = Number.parseInt(new URLSearchParams(window.location.search).get("page") || "1", 10);
+  return Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+}
+
 export default function SearchResults() {
   const [query, setQuery] = useState(getSearchQuery());
   const [products, setProducts] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(getPageFromSearch);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState([]);
   const productsMainRef = useRef(null);
@@ -34,7 +39,7 @@ export default function SearchResults() {
   useEffect(() => {
     function handleNavigation() {
       setQuery(getSearchQuery());
-      setCurrentPage(1);
+      setCurrentPage(getPageFromSearch());
     }
 
     window.addEventListener("popstate", handleNavigation);
@@ -45,6 +50,27 @@ export default function SearchResults() {
       window.removeEventListener("app:navigate", handleNavigation);
     };
   }, []);
+
+  useEffect(() => {
+    const nextSearch = new URLSearchParams(window.location.search);
+
+    if (visibleCurrentPage > 1) {
+      nextSearch.set("page", String(visibleCurrentPage));
+    } else {
+      nextSearch.delete("page");
+    }
+
+    const nextSearchText = nextSearch.toString();
+    const nextUrl = `${window.location.pathname}${nextSearchText ? `?${nextSearchText}` : ""}${window.location.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (nextUrl === currentUrl) {
+      return;
+    }
+
+    window.history.pushState(window.history.state || {}, "", nextUrl);
+    window.dispatchEvent(new Event("app:navigate"));
+  }, [visibleCurrentPage]);
 
   useEffect(() => {
     async function loadProducts() {

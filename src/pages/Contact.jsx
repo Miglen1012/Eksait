@@ -4,6 +4,8 @@ import "../styles/contact.css";
 
 const CONTACT_MESSAGE_MAX_LENGTH = 2000;
 const CONTACT_RETRY_FALLBACK_SECONDS = 60;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_PATTERN = /^[0-9]{10}$/;
 const INITIAL_FORM = {
   name: "",
   email: "",
@@ -25,6 +27,7 @@ function getUserContactFields(user) {
 
 export default function Contact() {
   const [messages, setMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [retryIn, setRetryIn] = useState(0);
@@ -99,33 +102,15 @@ export default function Contact() {
       ...current,
       [name]: value,
     }));
-  }
+    setFieldErrors((current) => {
+      if (!current[name]) {
+        return current;
+      }
 
-  function handleInvalid(event) {
-    const field = event.target;
-
-    if (field.validity.valueMissing) {
-      field.setCustomValidity("Това поле е задължително.");
-      return;
-    }
-
-    if (field.validity.typeMismatch) {
-      field.setCustomValidity("Моля, въведете валиден имейл адрес.");
-      return;
-    }
-
-    if (field.validity.patternMismatch) {
-      field.setCustomValidity("Моля, въведете телефонен номер с 10 цифри.");
-      return;
-    }
-
-    if (field.validity.tooLong) {
-      field.setCustomValidity(`Съобщението може да е до ${CONTACT_MESSAGE_MAX_LENGTH} символа.`);
-    }
-  }
-
-  function clearValidationMessage(event) {
-    event.target.setCustomValidity("");
+      const nextErrors = { ...current };
+      delete nextErrors[name];
+      return nextErrors;
+    });
   }
 
   async function handleSubmit(event) {
@@ -137,6 +122,7 @@ export default function Contact() {
     }
 
     setMessages([]);
+    setFieldErrors({});
     setSuccessMessage("");
     setSubmitting(true);
 
@@ -146,20 +132,41 @@ export default function Contact() {
       return;
     }
 
-    const messageText = String(formValues.message || "");
-
-    if (messageText.length > CONTACT_MESSAGE_MAX_LENGTH) {
-      setMessages([`Съобщението може да е до ${CONTACT_MESSAGE_MAX_LENGTH} символа.`]);
-      setSubmitting(false);
-      return;
-    }
-
     const payload = {
       name: String(formValues.name || "").trim(),
       email: String(formValues.email || "").trim(),
       phone: String(formValues.phone || "").trim(),
-      message: messageText.trim(),
+      message: String(formValues.message || "").trim(),
     };
+    const validationErrors = {};
+
+    if (!isAuthenticatedContact && !payload.name) {
+      validationErrors.name = "Въведете име.";
+    }
+
+    if (!isAuthenticatedContact && !payload.email) {
+      validationErrors.email = "Въведете имейл адрес.";
+    } else if (payload.email && !EMAIL_PATTERN.test(payload.email)) {
+      validationErrors.email = "Въведете валиден имейл адрес.";
+    }
+
+    if (!isAuthenticatedContact && !payload.phone) {
+      validationErrors.phone = "Въведете телефонен номер.";
+    } else if (payload.phone && !PHONE_PATTERN.test(payload.phone)) {
+      validationErrors.phone = "Моля, въведете телефонен номер с 10 цифри.";
+    }
+
+    if (!payload.message) {
+      validationErrors.message = "Въведете съобщение.";
+    } else if (payload.message.length > CONTACT_MESSAGE_MAX_LENGTH) {
+      validationErrors.message = `Съобщението може да е до ${CONTACT_MESSAGE_MAX_LENGTH} символа.`;
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors);
+      setSubmitting(false);
+      return;
+    }
 
     try {
       await apiRequest("/api/contact", {
@@ -177,13 +184,25 @@ export default function Contact() {
         setFormValues(INITIAL_FORM);
       }
 
+      setFieldErrors({});
       setSuccessMessage("Съобщението беше изпратено успешно.");
     } catch (error) {
       handleApiErrorByStatus(error, {
         fallbackRetryAfterSeconds: CONTACT_RETRY_FALLBACK_SECONDS,
         on422: () => {
-          const fieldErrors = getFieldErrors(error, ["name", "email", "phone", "message"]);
-          setMessages(fieldErrors.length > 0 ? fieldErrors : ["Моля, проверете въведените данни."]);
+          const nextFieldErrors = ["name", "email", "phone", "message"].reduce((errors, field) => {
+            const [fieldError] = error.errors?.[field] || [];
+
+            if (fieldError) {
+              errors[field] = fieldError;
+            }
+
+            return errors;
+          }, {});
+          const fieldErrorMessages = getFieldErrors(error, ["name", "email", "phone", "message"]);
+
+          setFieldErrors(nextFieldErrors);
+          setMessages(Object.keys(nextFieldErrors).length > 0 ? [] : fieldErrorMessages.length > 0 ? fieldErrorMessages : ["Моля, проверете въведените данни."]);
         },
         on429: (_, retryAfter) => {
           setRetryIn(retryAfter);
@@ -216,7 +235,7 @@ export default function Contact() {
         </div>
 
         <div className="contact-content">
-          <form className="contact-form" onSubmit={handleSubmit}>
+          <form className="contact-form" onSubmit={handleSubmit} noValidate>
             {messages.length > 0 && (
               <div className="contact-alert">
                 {messages.map((message) => (
@@ -239,12 +258,12 @@ export default function Contact() {
                 name="name"
                 value={formValues.name}
                 placeholder="Вашето име"
-                required={!isAuthenticatedContact}
                 disabled={isAuthenticatedContact}
                 onChange={(event) => updateField("name", event.target.value)}
-                onInvalid={handleInvalid}
-                onInput={clearValidationMessage}
+                aria-invalid={fieldErrors.name ? "true" : undefined}
+                aria-describedby={fieldErrors.name ? "name-error" : undefined}
               />
+              {fieldErrors.name && <p className="field-error" id="name-error">{fieldErrors.name}</p>}
             </div>
 
             <div className="form-field">
@@ -255,12 +274,12 @@ export default function Contact() {
                 name="email"
                 value={formValues.email}
                 placeholder="example@email.com"
-                required={!isAuthenticatedContact}
                 disabled={isAuthenticatedContact}
                 onChange={(event) => updateField("email", event.target.value)}
-                onInvalid={handleInvalid}
-                onInput={clearValidationMessage}
+                aria-invalid={fieldErrors.email ? "true" : undefined}
+                aria-describedby={fieldErrors.email ? "email-error" : undefined}
               />
+              {fieldErrors.email && <p className="field-error" id="email-error">{fieldErrors.email}</p>}
             </div>
 
             <div className="form-field">
@@ -271,13 +290,12 @@ export default function Contact() {
                 name="phone"
                 value={formValues.phone}
                 placeholder="08********"
-                required={!isAuthenticatedContact}
                 disabled={isAuthenticatedContact}
-                pattern="[0-9]{10}"
                 onChange={(event) => updateField("phone", event.target.value)}
-                onInvalid={handleInvalid}
-                onInput={clearValidationMessage}
+                aria-invalid={fieldErrors.phone ? "true" : undefined}
+                aria-describedby={fieldErrors.phone ? "phone-error" : undefined}
               />
+              {fieldErrors.phone && <p className="field-error" id="phone-error">{fieldErrors.phone}</p>}
             </div>
 
             <div className="form-field">
@@ -287,12 +305,12 @@ export default function Contact() {
                 name="message"
                 value={formValues.message}
                 placeholder="Напишете вашето съобщение..."
-                required
                 maxLength={CONTACT_MESSAGE_MAX_LENGTH}
                 onChange={(event) => updateField("message", event.target.value)}
-                onInvalid={handleInvalid}
-                onInput={clearValidationMessage}
+                aria-invalid={fieldErrors.message ? "true" : undefined}
+                aria-describedby={fieldErrors.message ? "message-error" : undefined}
               ></textarea>
+              {fieldErrors.message && <p className="field-error" id="message-error">{fieldErrors.message}</p>}
             </div>
 
             <button type="submit" disabled={submitting || retryIn > 0}>

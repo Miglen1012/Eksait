@@ -15,6 +15,11 @@ const sortOptions = [
 ];
 const productNameCollator = new Intl.Collator("bg-BG", { sensitivity: "base", numeric: true });
 
+function getPageFromSearch() {
+  const rawPage = Number.parseInt(new URLSearchParams(window.location.search).get("page") || "1", 10);
+  return Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+}
+
 function getCategoryFromPath() {
   const path = window.location.pathname;
 
@@ -114,7 +119,7 @@ export default function CategoryPage({ slug }) {
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortMode, setSortMode] = useState("default");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(getPageFromSearch);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState([]);
   const productsMainRef = useRef(null);
@@ -174,7 +179,7 @@ export default function CategoryPage({ slug }) {
   useEffect(() => {
     function handleHistoryChange() {
       setSelectedCategory(getCategoryFromPath());
-      setCurrentPage(1);
+      setCurrentPage(getPageFromSearch());
     }
 
     window.addEventListener("popstate", handleHistoryChange);
@@ -185,6 +190,27 @@ export default function CategoryPage({ slug }) {
       window.removeEventListener("app:navigate", handleHistoryChange);
     };
   }, []);
+
+  useEffect(() => {
+    const nextSearch = new URLSearchParams(window.location.search);
+
+    if (visibleCurrentPage > 1) {
+      nextSearch.set("page", String(visibleCurrentPage));
+    } else {
+      nextSearch.delete("page");
+    }
+
+    const nextSearchText = nextSearch.toString();
+    const nextUrl = `${window.location.pathname}${nextSearchText ? `?${nextSearchText}` : ""}${window.location.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (nextUrl === currentUrl) {
+      return;
+    }
+
+    window.history.pushState(window.history.state || {}, "", nextUrl);
+    window.dispatchEvent(new Event("app:navigate"));
+  }, [visibleCurrentPage]);
 
   useEffect(() => {
     async function loadProducts() {
@@ -209,9 +235,10 @@ export default function CategoryPage({ slug }) {
     setCurrentPage(1);
 
     const nextPath = category ? `/category/${category.slug}` : "/category";
+    const hasPageInSearch = new URLSearchParams(window.location.search).has("page");
 
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState(null, "", nextPath);
+    if (window.location.pathname !== nextPath || hasPageInSearch) {
+      window.history.pushState(window.history.state || {}, "", nextPath);
       window.dispatchEvent(new Event("app:navigate"));
     }
   }

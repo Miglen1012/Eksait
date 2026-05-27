@@ -118,17 +118,19 @@
 }
 
 .industry-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin-top: 22px;
+  align-items: stretch;
 }
 
 .industry-list span {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  min-height: 34px;
-  padding: 0 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
   color: #374151;
   background: #f8fafc;
   border: 1px solid #e5e7eb;
@@ -137,6 +139,11 @@
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.industry-list span:nth-child(9),
+.industry-list span:nth-child(10) {
+  grid-column: 1 / -1;
 }
 
 .product-range {
@@ -241,6 +248,15 @@
 }
 
 @media (max-width: 760px) {
+  .industry-list {
+    grid-template-columns: 1fr;
+  }
+
+  .industry-list span:nth-child(9),
+  .industry-list span:nth-child(10) {
+    grid-column: auto;
+  }
+
   .product-range-grid {
     grid-template-columns: 1fr;
   }

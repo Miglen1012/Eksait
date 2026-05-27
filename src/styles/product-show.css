@@ -208,6 +208,7 @@
 .product-show-info h1 {
   margin: 0;
   color: #15171c;
+  font-family: var(--font-display);
   font-size: clamp(25px, 2.6vw, 34px);
   line-height: 1.16;
   letter-spacing: 0;
@@ -235,6 +236,7 @@
   align-items: center;
   padding: 0 12px;
   border-radius: 999px;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 750;
 }
@@ -293,6 +295,7 @@
   order: 1;
   grid-column: 1 / -1;
   color: #0f172a;
+  font-family: var(--font-price);
   font-size: 25px;
   line-height: 1;
   justify-self: start;
@@ -317,7 +320,7 @@
   border-radius: 8px;
   background: #ffffff;
   color: #111827;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 750;
   text-align: left;
@@ -389,7 +392,7 @@
   background: #f8fafc;
   border: 1px solid #d7dfe9;
   border-radius: 8px;
-  font: inherit;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 650;
   outline: none;
@@ -420,7 +423,7 @@
   border-radius: 8px;
   background: transparent;
   color: #111827;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 15px;
   font-weight: 700;
   text-align: left;
@@ -466,7 +469,7 @@
   border: 0;
   background: #f8fafc;
   color: #0f172a;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 19px;
   font-weight: 700;
   line-height: 1;
@@ -491,7 +494,7 @@
   border-right: 1px solid #d1d5db;
   padding: 0;
   text-align: center;
-  font: inherit;
+  font-family: var(--font-price);
   font-size: 16px;
   font-weight: 700;
   color: #0f172a;
@@ -526,7 +529,7 @@
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 800;
   text-transform: uppercase;
@@ -591,6 +594,7 @@
 .product-show-related-header h2 {
   margin: 0;
   color: #15171c;
+  font-family: var(--font-display);
   font-size: clamp(20px, 1.8vw, 25px);
   line-height: 1.15;
 }
@@ -611,6 +615,7 @@
   background: #d71920;
   border: 1px solid #c91820;
   border-radius: 999px;
+  font-family: var(--font-ui);
   cursor: pointer;
   transition: color 0.2s ease, background 0.2s ease, transform 0.18s ease;
 }
@@ -756,6 +761,7 @@
 
 .product-show-related-footer strong {
   color: #0f172a;
+  font-family: var(--font-price);
   font-size: 14px;
   line-height: 1.2;
 }
@@ -773,6 +779,7 @@
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 800;
   line-height: 1;
@@ -814,6 +821,7 @@
   width: min(100%, 980px);
   margin: 0 0 18px;
   color: #15171c;
+  font-family: var(--font-display);
   font-size: 22px;
   line-height: 1.2;
   position: relative;
@@ -851,7 +859,7 @@
   border: 1px solid #e5e7eb;
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;

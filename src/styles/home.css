@@ -84,7 +84,7 @@
   margin: 0 0 -1px;
   padding-bottom: 12px;
   color: #15171c;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: clamp(20px, 1.55vw, 25px);
   font-weight: 750;
   line-height: 1.08;
@@ -177,6 +177,7 @@
   justify-content: center;
   color: #ffffff;
   background: rgba(215, 25, 32, 0.42);
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
@@ -206,6 +207,7 @@
 .home-product-body h3 {
   margin: 0;
   color: #080b12;
+  font-family: var(--font-heading);
   font-size: clamp(15px, 1.2vw, 18px);
   font-weight: 750;
   line-height: 1.32;

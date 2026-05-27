@@ -37,6 +37,7 @@
   display: inline-flex;
   margin-bottom: 12px;
   color: #b9151d;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 750;
   text-transform: uppercase;
@@ -86,6 +87,7 @@
   display: grid;
   gap: 7px;
   color: #15171c;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -102,7 +104,7 @@
   background: #f8fafc;
   border: 1px solid #dbe1ea;
   border-radius: 7px;
-  font: inherit;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 650;
   letter-spacing: 0;
@@ -124,6 +126,10 @@
   gap: 12px;
   cursor: pointer;
   text-align: left;
+}
+
+.products-sort-field .custom-select-trigger {
+  font-family: var(--font-ui);
 }
 
 .products-sort-field .custom-select-trigger span:first-child {
@@ -181,7 +187,7 @@
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 650;
   text-align: left;
@@ -214,6 +220,7 @@
 .products-chip-filter legend {
   padding: 0;
   color: #15171c;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 850;
   letter-spacing: 0.04em;
@@ -455,7 +462,7 @@
   background: #ffffff;
   border: 1px solid #dbe1ea;
   border-radius: 999px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
@@ -493,12 +500,14 @@
   align-items: baseline;
   gap: 8px;
   color: #6b7280;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 700;
 }
 
 .products-filter-meta strong {
   color: #b9151d;
+  font-family: var(--font-price);
   font-size: clamp(22px, 2vw, 28px);
   line-height: 1;
 }
@@ -558,7 +567,7 @@
   border: 1px solid #2b2b2b;
   border-left: 4px solid #d71920;
   border-radius: 9px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 800;
   text-transform: uppercase;
@@ -583,6 +592,7 @@
   color: #c91820;
   background: #ffffff;
   border-radius: 999px;
+  font-family: var(--font-price);
   font-size: 12px;
 }
 
@@ -644,7 +654,7 @@
   border: 1px solid #e5e7eb;
   border-left: 3px solid #d71920;
   border-radius: 7px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 700;
   text-align: left;
@@ -686,7 +696,7 @@
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;
@@ -704,6 +714,7 @@
   background: #fff7f7;
   border-color: #fecdd3;
   border-radius: 6px;
+  font-family: var(--font-ui);
 }
 
 .products-sidebar {
@@ -805,7 +816,7 @@
   border: 1px solid #e5e7eb;
   border-left: 3px solid #d71920;
   border-radius: 7px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 650;
   text-align: left;
@@ -872,6 +883,7 @@
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;
@@ -926,6 +938,7 @@
   border: 1px solid #dbe1ea;
   border-radius: 999px;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -949,7 +962,7 @@
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   border: 1px solid #cfd6e0;
   border-radius: 999px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 15px;
   font-weight: 850;
   letter-spacing: 0;
@@ -1008,7 +1021,7 @@
   background: transparent;
   border: 0;
   border-radius: 999px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 800;
   text-align: center;
@@ -1055,7 +1068,7 @@
   background: #ffffff;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 750;
   cursor: pointer;
@@ -1246,6 +1259,7 @@
 
 .product-card-footer strong {
   color: #15171c;
+  font-family: var(--font-price);
   font-size: 16px;
   white-space: nowrap;
 }
@@ -1283,7 +1297,7 @@
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
-  font-family: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;

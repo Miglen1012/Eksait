@@ -85,6 +85,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  font-family: var(--font-ui);
   color: #f7f7f7;
   font-size: 16px;
   font-weight: 750;
@@ -236,7 +237,7 @@
   background: transparent;
   padding: 0 12px 0 14px;
   color: #111827;
-  font: inherit;
+  font-family: var(--font-body);
   font-size: 13px;
 }
 
@@ -294,7 +295,7 @@
   background: transparent;
   border: 0;
   border-radius: 6px;
-  font: inherit;
+  font-family: var(--font-ui);
   text-align: left;
   cursor: pointer;
 }
@@ -350,6 +351,7 @@
   color: #64748b;
   font-size: 11px;
   font-weight: 600;
+  font-family: var(--font-ui);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -360,6 +362,7 @@
   color: #15171c;
   font-size: 13px;
   font-weight: 800;
+  font-family: var(--font-price);
   white-space: nowrap;
 }
 
@@ -473,6 +476,7 @@
   color: #15171c;
   font-size: 14px;
   font-weight: 800;
+  font-family: var(--font-ui);
   border-bottom: 1px solid #e5e7eb;
 }
 
@@ -487,7 +491,7 @@
   background: transparent;
   border: 0;
   border-radius: 4px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 750;
   text-align: left;
@@ -521,7 +525,7 @@
   border-radius: 0;
   padding: 0;
   box-shadow: none;
-  font: inherit;
+  font-family: var(--font-ui);
   cursor: pointer;
   transition: transform 0.2s ease, color 0.2s ease;
 }
@@ -779,7 +783,7 @@
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
-  font: inherit;
+  font-family: var(--font-ui);
   font-weight: 800;
   text-transform: uppercase;
   transition: color 0.28s ease, transform 0.18s ease;

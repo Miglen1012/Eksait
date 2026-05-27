@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest, getCartSessionId, normalizeErrors } from "../api/client";
+import { fetchEquipmentProducts } from "../api/equipment";
+import { fetchProducts, getCachedProducts } from "../api/products";
 import { useCallback } from "react";
 import CustomSelect from "../components/form/CustomSelect";
 import {
@@ -8,9 +10,9 @@ import {
   getPurchasableState,
   hasProductVariants,
   isVariantAvailable,
-  normalizeProducts,
   stripHtml,
 } from "../utils/products";
+import { normalizeSearchText } from "../utils/search";
 import "../styles/product-show.css";
 
 function getProductImages(product) {
@@ -30,19 +32,13 @@ function getMaxPurchasableQuantity(purchasable) {
   return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 }
 
-function hasRichTextContent(value) {
-  return stripHtml(value).length > 0;
+function hasPositivePrice(value) {
+  const price = Number(value);
+  return Number.isFinite(price) && price > 0;
 }
 
-function formatVariantDimensions(variant) {
-  const dimensions = variant?.dimensions || {};
-  const values = [
-    dimensions.length ? `Д: ${dimensions.length}` : "",
-    dimensions.width ? `Ш: ${dimensions.width}` : "",
-    dimensions.height ? `В: ${dimensions.height}` : "",
-  ].filter(Boolean);
-
-  return values.join(" / ");
+function hasRichTextContent(value) {
+  return stripHtml(value).length > 0;
 }
 
 function getProductPath(product) {
@@ -65,8 +61,8 @@ function resetScrollToTop() {
 }
 
 export default function ProductShow({ productKey }) {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState(() => getCachedProducts() || []);
+  const [loading, setLoading] = useState(() => !getCachedProducts());
   const [messages, setMessages] = useState([]);
   const [successMessage, setSuccessMessage] = useState("");
   const [activeImage, setActiveImage] = useState("");
@@ -75,6 +71,7 @@ export default function ProductShow({ productKey }) {
   const [selectedVariantId, setSelectedVariantId] = useState("");
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
   const [activeDetailsTab, setActiveDetailsTab] = useState("sizes");
+  const [variantTableSearch, setVariantTableSearch] = useState("");
   const relatedScrollerRef = useRef(null);
 
   useEffect(() => {
@@ -98,14 +95,26 @@ export default function ProductShow({ productKey }) {
   );
 
   const refreshProducts = useCallback(async () => {
-    const searchData = await apiRequest(`/api/products/search?q=${encodeURIComponent(productKey)}&limit=6`);
-    let normalizedProducts = normalizeProducts(searchData);
+    let normalizedProducts = await fetchProducts();
     let foundProduct = normalizedProducts.find((item) => item.slug === productKey || String(item.id) === String(productKey));
 
-    if (!foundProduct) {
-      const data = await apiRequest("/api/products");
-      normalizedProducts = normalizeProducts(data);
+    if (!foundProduct && getCachedProducts()) {
+      normalizedProducts = await fetchProducts({ force: true });
       foundProduct = normalizedProducts.find((item) => item.slug === productKey || String(item.id) === String(productKey));
+    }
+
+    if (!foundProduct) {
+      try {
+        const normalizedEquipment = await fetchEquipmentProducts();
+        const foundEquipment = normalizedEquipment.find((item) => item.slug === productKey || String(item.id) === String(productKey));
+
+        if (foundEquipment) {
+          normalizedProducts = normalizedEquipment;
+          foundProduct = foundEquipment;
+        }
+      } catch {
+        // Equipment is optional; product pages should still work without that endpoint.
+      }
     }
 
     setProducts(normalizedProducts);
@@ -114,7 +123,9 @@ export default function ProductShow({ productKey }) {
 
   useEffect(() => {
     async function loadProduct() {
-      setLoading(true);
+      if (!getCachedProducts()) {
+        setLoading(true);
+      }
       setMessages([]);
 
       try {
@@ -152,6 +163,8 @@ export default function ProductShow({ productKey }) {
   const safePurchaseQuantity = maxPurchasableQuantity > 0
     ? Math.min(Math.max(purchaseQuantity, 1), maxPurchasableQuantity)
     : 1;
+  const hasPurchasablePrice = hasPositivePrice(purchasable.price);
+  const canAddToCart = !adding && !purchasable.needsVariant && purchasable.isAvailable && hasPurchasablePrice;
 
   useEffect(() => {
     if (!successMessage) {
@@ -167,12 +180,17 @@ export default function ProductShow({ productKey }) {
 
   async function addToCart() {
     if (hasProductVariants(product) && !safeSelectedVariantId) {
-      setMessages(["Изберете размер преди добавяне в количката."]);
+      setMessages(["Изберете тип/размер преди добавяне в количката."]);
       return;
     }
 
     if (!purchasable.isAvailable) {
       setMessages(["Продуктът не е наличен."]);
+      return;
+    }
+
+    if (!hasPositivePrice(purchasable.price)) {
+      setMessages(["Този тип/размер няма въведена цена и не може да бъде поръчан. Изберете друг тип/размер."]);
       return;
     }
 
@@ -247,12 +265,12 @@ export default function ProductShow({ productKey }) {
   }
 
   const categoryNames = product.categories.map((category) => category.name).filter(Boolean).join(", ");
-  const description = stripHtml(product.description);
+  const description = product.plainDescription || stripHtml(product.description);
   const extraInformation = product.extraInformation || "";
   const hasExtraInformation = hasRichTextContent(extraInformation);
   const hasSizeTable = hasProductVariants(product);
   const detailsTabs = [
-    hasSizeTable ? { id: "sizes", label: "Таблица с размери" } : null,
+    hasSizeTable ? { id: "sizes", label: "Таблица с типове/размери" } : null,
     hasExtraInformation ? { id: "info", label: "Допълнителна информация" } : null,
   ].filter(Boolean);
   const selectedDetailsTab = detailsTabs.some((tab) => tab.id === activeDetailsTab)
@@ -265,15 +283,24 @@ export default function ProductShow({ productKey }) {
   const variantOptions = hasProductVariants(product)
     ? product.variants.map((variant) => {
       const isAvailable = isVariantAvailable(variant);
-      const availabilityLabel = isAvailable ? "в наличност" : "изчерпан";
+      const hasPrice = hasPositivePrice(variant.price);
+      const availabilityLabel = !isAvailable
+        ? "изчерпан"
+        : hasPrice
+          ? "в наличност"
+          : "няма въведена цена";
 
       return {
         value: String(variant.id),
         label: `${variant.size} - ${formatPrice(variant.price)} (${availabilityLabel})`,
-        disabled: !isAvailable,
+        disabled: !isAvailable || !hasPrice,
       };
     })
     : [];
+  const normalizedVariantTableSearch = normalizeSearchText(variantTableSearch);
+  const visibleTableVariants = hasSizeTable && normalizedVariantTableSearch
+    ? product.variants.filter((variant) => normalizeSearchText(variant.size).includes(normalizedVariantTableSearch))
+    : product.variants;
 
   function goToImage(offset) {
     if (imageOptions.length <= 1) {
@@ -324,7 +351,7 @@ export default function ProductShow({ productKey }) {
                 onClick={() => activeImage && setPreviewImage(activeImage)}
                 aria-label="Отвори снимката"
               >
-                {activeImage ? <img src={activeImage} alt={product.name} /> : <span>Няма снимка</span>}
+                {activeImage ? <img src={activeImage} alt={product.name} loading="eager" fetchPriority="high" decoding="async" /> : <span>Няма снимка</span>}
               </button>
 
               {imageOptions.length > 1 && (
@@ -355,7 +382,7 @@ export default function ProductShow({ productKey }) {
                     key={image.id || image.url}
                     aria-label="Покажи снимка"
                   >
-                    <img src={image.url} alt="" />
+                    <img src={image.url} alt="" loading="lazy" decoding="async" />
                   </button>
                 ))}
               </div>
@@ -379,14 +406,15 @@ export default function ProductShow({ productKey }) {
             <div className="product-show-buy">
               {hasProductVariants(product) && (
                 <CustomSelect
-                  ariaLabel="Избор на размер"
+                  ariaLabel="Избор на тип/размер"
                   value={safeSelectedVariantId}
                   onChange={(value) => {
                     setSelectedVariantId(value);
                     setPurchaseQuantity(1);
                   }}
-                  options={[{ value: "", label: "Изберете размер", disabled: true }, ...variantOptions]}
-                  placeholder="Изберете размер"
+                  options={[{ value: "", label: "Изберете тип/размер", disabled: true }, ...variantOptions]}
+                  placeholder="Изберете тип/размер"
+                  searchPlaceholder="Търси по тип/размер"
                 />
               )}
 
@@ -409,7 +437,7 @@ export default function ProductShow({ productKey }) {
                       max={maxPurchasableQuantity > 0 ? maxPurchasableQuantity : undefined}
                       value={safePurchaseQuantity}
                       onChange={(event) => updateQuantity(event.target.value)}
-                      disabled={adding || !purchasable.isAvailable}
+                      disabled={adding || !purchasable.isAvailable || !hasPurchasablePrice}
                       aria-label="Количество"
                     />
                     <button
@@ -428,15 +456,17 @@ export default function ProductShow({ productKey }) {
                 type="button"
                 className="product-show-add-button"
                 onClick={addToCart}
-                disabled={adding || purchasable.needsVariant || !purchasable.isAvailable}
+                disabled={!canAddToCart}
               >
                 {adding
                   ? "Добавяне..."
                   : purchasable.needsVariant
-                    ? "Избери размер"
-                    : purchasable.isAvailable
-                      ? "Добави в количката"
-                      : "Изчерпан"}
+                    ? "Избери тип/размер"
+                    : !purchasable.isAvailable
+                      ? "Изчерпан"
+                      : hasPurchasablePrice
+                        ? "Добави в количката"
+                        : "Няма цена"}
               </button>
             </div>
           </div>
@@ -462,7 +492,7 @@ export default function ProductShow({ productKey }) {
                   <article className="product-show-related-card" key={relatedProduct.id}>
                     <a href={getProductPath(relatedProduct)} className="product-show-related-image" aria-label={relatedProduct.name}>
                       {relatedProduct.image ? (
-                        <img src={relatedProduct.image} alt={relatedProduct.name} />
+                        <img src={relatedProduct.image} alt={relatedProduct.name} loading="lazy" decoding="async" />
                       ) : (
                         <span>Няма снимка</span>
                       )}
@@ -515,30 +545,44 @@ export default function ProductShow({ productKey }) {
 
             <div className="product-show-details-panel">
               {selectedDetailsTab === "sizes" && hasSizeTable && (
-                <div className="product-show-table-wrap">
-                  <table className="product-show-size-table">
-                    <thead>
-                      <tr>
-                        <th>Размер</th>
-                        <th>Цена</th>
-                        <th>Наличност</th>
-                        <th>Тегло</th>
-                        <th>Размери</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {product.variants.map((variant) => (
-                        <tr key={variant.id}>
-                          <td>{variant.size || "-"}</td>
-                          <td>{formatPrice(variant.price)}</td>
-                          <td>{isVariantAvailable(variant) ? "В наличност" : "Изчерпан"}</td>
-                          <td>{variant.weight || "-"}</td>
-                          <td>{formatVariantDimensions(variant) || "-"}</td>
+                <>
+                  <label className="product-show-size-search">
+                    <span>Търси по тип/размер</span>
+                    <input
+                      type="search"
+                      value={variantTableSearch}
+                      onChange={(event) => setVariantTableSearch(event.target.value)}
+                      placeholder="Търси по тип/размер"
+                    />
+                  </label>
+
+                  <div className="product-show-table-wrap">
+                    <table className="product-show-size-table">
+                      <thead>
+                        <tr>
+                          <th>Тип/Размер</th>
+                          <th>Цена</th>
+                          <th>Наличност</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {visibleTableVariants.length > 0 ? visibleTableVariants.map((variant) => (
+                          <tr key={variant.id}>
+                            <td>{variant.size || "-"}</td>
+                            <td>{formatPrice(variant.price)}</td>
+                            <td>{isVariantAvailable(variant) ? "В наличност" : "Изчерпан"}</td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan="3" className="product-show-size-empty">
+                              Няма типове/размери, които съвпадат с търсенето.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
 
               {selectedDetailsTab === "info" && hasExtraInformation && (
@@ -574,7 +618,7 @@ export default function ProductShow({ productKey }) {
                 />
               </>
             )}
-            <img src={previewImage} alt={product.name} />
+            <img src={previewImage} alt={product.name} decoding="async" />
           </div>
         </div>
       )}

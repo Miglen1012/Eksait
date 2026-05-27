@@ -6,16 +6,29 @@ export default function CustomSelect({
   onChange,
   options = [],
   placeholder = "",
+  searchPlaceholder = "Търси...",
+  searchThreshold = 8,
   value = "",
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const selectRef = useRef(null);
+  const shouldShowSearch = options.length >= searchThreshold;
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
   const selectedOption = useMemo(
     () => options.find((option) => String(option.value) === String(value)),
     [options, value],
   );
   const buttonLabel = selectedOption?.label || placeholder;
+  const visibleOptions = useMemo(
+    () => (
+      normalizedSearchQuery
+        ? options.filter((option) => String(option.label || "").toLowerCase().includes(normalizedSearchQuery))
+        : options
+    ),
+    [normalizedSearchQuery, options],
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -57,7 +70,13 @@ export default function CustomSelect({
       <button
         type="button"
         className="custom-select-trigger"
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => {
+          if (!isOpen) {
+            setSearchQuery("");
+          }
+
+          setIsOpen((current) => !current);
+        }}
         disabled={disabled}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
@@ -69,7 +88,20 @@ export default function CustomSelect({
 
       {isOpen && (
         <div className="custom-select-menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => (
+          {shouldShowSearch && (
+            <div className="custom-select-search">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={searchPlaceholder}
+                aria-label={`${ariaLabel} - търсене`}
+                autoFocus
+              />
+            </div>
+          )}
+
+          {visibleOptions.length > 0 ? visibleOptions.map((option) => (
             <button
               type="button"
               className={`custom-select-option${String(option.value) === String(value) && !option.disabled ? " is-selected" : ""}`}
@@ -81,7 +113,9 @@ export default function CustomSelect({
             >
               {option.label}
             </button>
-          ))}
+          )) : (
+            <span className="custom-select-empty">Няма намерени резултати</span>
+          )}
         </div>
       )}
     </div>

@@ -1,0 +1,52 @@
+.equipment-layout {
+  grid-template-columns: 1fr;
+}
+
+.equipment-filter-menu .catalog-filter-panel {
+  left: 0;
+  right: auto;
+  width: min(640px, calc(100vw - 64px));
+  grid-template-columns: 1fr;
+}
+
+.equipment-filter-menu .catalog-filter-fields {
+  grid-template-columns: 1fr;
+}
+
+.equipment-heading {
+  margin-top: 0;
+}
+
+.equipment-empty {
+  align-content: center;
+  gap: 10px;
+}
+
+.equipment-empty h2,
+.equipment-empty p {
+  margin: 0;
+}
+
+.equipment-empty h2 {
+  color: #15171c;
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.equipment-empty p {
+  max-width: 520px;
+  color: #4b5563;
+  line-height: 1.65;
+}
+
+@media (max-width: 880px) {
+  .equipment-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-filter-menu .catalog-filter-panel {
+    position: static;
+    width: 100%;
+  }
+}

@@ -108,7 +108,7 @@ export default function AboutUs() {
           </p>
         </div>
         <div className="about-hero-media">
-          <img src={aboutImage} alt="Металообработващо оборудване" />
+          <img src={aboutImage} alt="Металообработващо оборудване" loading="lazy" decoding="async" />
         </div>
       </section>
 

@@ -1,6 +1,8 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest, getApiBaseUrl, getAuthToken, normalizeErrors } from "../api/client";
-import { getPrimaryImage, normalizeProducts } from "../utils/products";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiRequest, getApiBaseUrl, getAuthToken, getCartSessionId, normalizeErrors } from "../api/client";
+import { fetchProducts } from "../api/products";
+import { getCartItemsFromResponse, responseIncludesCartItems } from "../utils/cart";
+import { getPrimaryImage } from "../utils/products";
 import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/cart.css";
 
@@ -24,14 +26,14 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const shippingMethodOptions = [
   { value: "address", label: "До адрес" },
   { value: "office", label: "До офис" },
-  { value: "apm", label: "До Еконтомат" },
 ];
-const paymentMethodOptions = [
-  { value: "", label: "--Изберете метод за плащане--", disabled: true },
-  { value: "stripe", label: "Карта" },
+const paymentMethodPlaceholder = { value: "", label: "--Изберете метод за плащане--", disabled: true };
+const fallbackPaymentMethods = [
   { value: "cod", label: "Наложен платеж" },
   { value: "bank_transfer", label: "Банков превод" },
 ];
+const cardPaymentMethodLabel = "Плащане с карта";
+const cartCachePrefix = "excompany_checkout_cart";
 
 function resolveImageUrl(value) {
   const rawUrl = String(value || "").trim();
@@ -70,29 +72,358 @@ function buildProductLookup(products) {
 
 async function fetchProductLookup() {
   try {
-    const data = await apiRequest("/api/products");
-    return buildProductLookup(normalizeProducts(data));
+    return buildProductLookup(await fetchProducts());
   } catch {
     return {};
   }
 }
 
-function getRawCartItems(data) {
-  return (
-    data?.items ||
-    data?.cart?.items ||
-    data?.cart_items ||
-    data?.data?.items ||
-    data?.data?.cart?.items ||
-    data?.data?.cart_items ||
-    data?.data ||
-    data ||
-    []
-  );
-}
-
 function getUserFromResponse(data) {
   return data?.user || data?.data?.user || data?.data || data;
+}
+
+function normalizeBoolean(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  if (typeof value === "string") {
+    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+  }
+
+  return false;
+}
+
+function hasStripeEnabledKey(value) {
+  const normalizedKey = String(value || "").trim().toLowerCase();
+  return normalizedKey === "stripe_enabled" || normalizedKey === "stripeenabled";
+}
+
+function getSettingEntryValue(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return undefined;
+  }
+
+  const key = entry.key ?? entry.name ?? entry.setting ?? entry.code;
+
+  if (!hasStripeEnabledKey(key)) {
+    return undefined;
+  }
+
+  return entry.value ?? entry.enabled ?? entry.is_enabled ?? entry.isEnabled;
+}
+
+function normalizePaymentMethod(option) {
+  if (typeof option === "string") {
+    const value = option.trim();
+
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      label: value === "stripe" ? cardPaymentMethodLabel : value,
+    };
+  }
+
+  if (!option || typeof option !== "object" || Array.isArray(option)) {
+    return null;
+  }
+
+  const value = String(option.value ?? option.code ?? option.key ?? "").trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const label = value === "stripe"
+    ? cardPaymentMethodLabel
+    : String(option.label ?? option.name ?? option.title ?? "").trim() || value;
+
+  return {
+    ...option,
+    value,
+    label,
+    disabled: normalizeBoolean(option.disabled ?? option.is_disabled ?? option.isDisabled),
+  };
+}
+
+function getPaymentMethodsFromResponse(data) {
+  const candidates = [
+    data?.payment_methods,
+    data?.paymentMethods,
+    data?.settings?.payment_methods,
+    data?.settings?.paymentMethods,
+    data?.checkout?.payment_methods,
+    data?.checkout?.paymentMethods,
+    data?.payment_settings?.payment_methods,
+    data?.payment_settings?.paymentMethods,
+    data?.paymentSettings?.payment_methods,
+    data?.paymentSettings?.paymentMethods,
+    data?.data?.payment_methods,
+    data?.data?.paymentMethods,
+    data?.data?.settings?.payment_methods,
+    data?.data?.settings?.paymentMethods,
+    data?.data?.checkout?.payment_methods,
+    data?.data?.checkout?.paymentMethods,
+    data?.data?.payment_settings?.payment_methods,
+    data?.data?.payment_settings?.paymentMethods,
+    data?.data?.paymentSettings?.payment_methods,
+    data?.data?.paymentSettings?.paymentMethods,
+  ];
+
+  const paymentMethods = candidates.find(Array.isArray);
+
+  if (!paymentMethods) {
+    return null;
+  }
+
+  return paymentMethods
+    .map(normalizePaymentMethod)
+    .filter(Boolean);
+}
+
+function getResolvedPaymentMethodsFromResponse(data) {
+  const paymentMethods = getPaymentMethodsFromResponse(data);
+  const stripeEnabled = getStripeEnabledFromResponse(data);
+
+  if (paymentMethods?.length > 0) {
+    if (stripeEnabled === false) {
+      return paymentMethods.filter((method) => method.value !== "stripe");
+    }
+
+    return paymentMethods;
+  }
+
+  if (stripeEnabled !== null) {
+    return stripeEnabled
+      ? [...fallbackPaymentMethods, { value: "stripe", label: cardPaymentMethodLabel }]
+      : fallbackPaymentMethods;
+  }
+
+  return null;
+}
+
+function normalizeOfficeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getOfficeClassification(office) {
+  const explicitCandidates = [
+    office?.is_aps,
+    office?.isAPS,
+    office?.isApm,
+    office?.is_apm,
+    office?.aps,
+    office?.apm,
+    office?.is_automated,
+    office?.isAutomated,
+    office?.automatic,
+  ];
+  const explicitValue = explicitCandidates.find((candidate) => candidate !== null && typeof candidate !== "undefined" && candidate !== "");
+
+  if (typeof explicitValue !== "undefined") {
+    return normalizeBoolean(explicitValue);
+  }
+
+  const descriptiveTokens = [
+    office?.type,
+    office?.office_type,
+    office?.officeType,
+    office?.type_name,
+    office?.typeName,
+    office?.office_type_name,
+    office?.officeTypeName,
+    office?.subtype,
+    office?.sub_type,
+    office?.subType,
+    office?.kind,
+    office?.office_kind,
+    office?.officeKind,
+    office?.category,
+    office?.category_name,
+    office?.categoryName,
+    office?.description,
+    office?.office_description,
+    office?.officeDescription,
+    office?.name,
+  ]
+    .map(normalizeOfficeText)
+    .filter(Boolean);
+
+  if (descriptiveTokens.some((token) => (
+    token.includes("aps") ||
+    token.includes("apm") ||
+    token.includes("econtomat") ||
+    token.includes("ekontomat") ||
+    token.includes("еконтомат") ||
+    token.includes("automat") ||
+    token.includes("автомат") ||
+    token.includes("locker") ||
+    token.includes("machine")
+  ))) {
+    return true;
+  }
+
+  if (descriptiveTokens.some((token) => (
+    token.includes("office") ||
+    token.includes("офис")
+  ))) {
+    return false;
+  }
+
+  return null;
+}
+
+function getOfficesFromResponse(data) {
+  const candidates = [
+    data?.offices,
+    data?.data?.offices,
+    data?.data?.items,
+    data?.items,
+    data?.results,
+    data?.data?.results,
+    data?.data,
+    data,
+  ];
+
+  return candidates.find(Array.isArray) || [];
+}
+
+function normalizeOffice(office) {
+  const code = (
+    office?.code ??
+    office?.office_code ??
+    office?.officeCode ??
+    office?.id ??
+    office?.office_id ??
+    office?.officeId ??
+    ""
+  );
+
+  return {
+    ...office,
+    code: String(code || ""),
+    name: (
+      office?.name ??
+      office?.office_name ??
+      office?.officeName ??
+      office?.label ??
+      office?.title ??
+      ""
+    ),
+    address: (
+      office?.address ??
+      office?.office_address ??
+      office?.officeAddress ??
+      office?.address_full ??
+      office?.addressFull ??
+      office?.full_address ??
+      office?.fullAddress ??
+      ""
+    ),
+    is_aps: getOfficeClassification(office),
+  };
+}
+
+function normalizeOfficesResponse(data) {
+  return getOfficesFromResponse(data)
+    .map(normalizeOffice)
+    .filter((office) => office.code && office.name);
+}
+
+function getStripeEnabledFromResponse(data) {
+  const candidates = [
+    data?.stripe_enabled,
+    data?.stripeEnabled,
+    data?.settings?.stripe_enabled,
+    data?.settings?.stripeEnabled,
+    data?.settings?.stripe?.enabled,
+    data?.checkout?.stripe_enabled,
+    data?.checkout?.stripeEnabled,
+    data?.checkout?.stripe?.enabled,
+    data?.payment_settings?.stripe_enabled,
+    data?.payment_settings?.stripeEnabled,
+    data?.payment_settings?.stripe?.enabled,
+    data?.paymentSettings?.stripe_enabled,
+    data?.paymentSettings?.stripeEnabled,
+    data?.paymentSettings?.stripe?.enabled,
+    data?.stripe?.enabled,
+    data?.payments?.stripe?.enabled,
+    data?.payment_methods?.stripe?.enabled,
+    data?.paymentMethods?.stripe?.enabled,
+    data?.data?.stripe_enabled,
+    data?.data?.stripeEnabled,
+    data?.data?.settings?.stripe_enabled,
+    data?.data?.settings?.stripeEnabled,
+    data?.data?.settings?.stripe?.enabled,
+    data?.data?.checkout?.stripe_enabled,
+    data?.data?.checkout?.stripeEnabled,
+    data?.data?.checkout?.stripe?.enabled,
+    data?.data?.payment_settings?.stripe_enabled,
+    data?.data?.payment_settings?.stripeEnabled,
+    data?.data?.payment_settings?.stripe?.enabled,
+    data?.data?.paymentSettings?.stripe_enabled,
+    data?.data?.paymentSettings?.stripeEnabled,
+    data?.data?.paymentSettings?.stripe?.enabled,
+    data?.data?.stripe?.enabled,
+    data?.data?.payments?.stripe?.enabled,
+    data?.data?.payment_methods?.stripe?.enabled,
+    data?.data?.paymentMethods?.stripe?.enabled,
+  ];
+  const settingEntries = [
+    data?.settings,
+    data?.payment_settings,
+    data?.paymentSettings,
+    data?.data?.settings,
+    data?.data?.payment_settings,
+    data?.data?.paymentSettings,
+    data?.data,
+    data,
+  ]
+    .filter(Array.isArray)
+    .flat();
+  const settingEntryObjects = [
+    data?.settings,
+    data?.payment_settings,
+    data?.paymentSettings,
+    data?.data?.settings,
+    data?.data?.payment_settings,
+    data?.data?.paymentSettings,
+    data?.data,
+    data,
+  ].filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
+  const settingEntryValue = settingEntries
+    .concat(settingEntryObjects)
+    .map(getSettingEntryValue)
+    .find((candidate) => candidate !== undefined && candidate !== null);
+
+  const value = candidates.find((candidate) => candidate !== undefined && candidate !== null) ?? settingEntryValue;
+  return value === undefined ? null : normalizeBoolean(value);
+}
+
+async function fetchCheckoutSettings() {
+  const endpoints = ["/api/checkout/payment-methods", "/api/checkout/settings", "/api/settings"];
+
+  for (const endpoint of endpoints) {
+    try {
+      const data = await apiRequest(endpoint);
+      const paymentMethods = getResolvedPaymentMethodsFromResponse(data);
+
+      if (paymentMethods !== null) {
+        return { paymentMethods };
+      }
+    } catch {
+      // Try the next known checkout endpoint before falling back to local config.
+    }
+  }
+
+  return { paymentMethods: fallbackPaymentMethods };
 }
 
 function getUserPhone(user) {
@@ -205,6 +536,33 @@ function getItemImage(item, product, catalogProduct) {
   return resolveImageUrl(imageUrl);
 }
 
+function hasVariantId(value) {
+  return value !== null && typeof value !== "undefined" && value !== "";
+}
+
+function hasValue(value) {
+  return value !== null && typeof value !== "undefined" && value !== "";
+}
+
+function cartNeedsProductLookup(cartData) {
+  return getCartItemsFromResponse(cartData).some((item) => {
+    const product = item.product || item;
+    const hasName = Boolean(product.name || item.name);
+    const hasPrice = [item.price, product.price, product.unit_price].some(hasValue);
+    const hasImage = Boolean(
+      getPrimaryImage(product.images || []) ||
+      product.image ||
+      product.thumbnail ||
+      product.image_url ||
+      item.image ||
+      item.thumbnail ||
+      item.image_url
+    );
+
+    return !hasName || !hasPrice || !hasImage;
+  });
+}
+
 function getStockQuantity(item, catalogProduct) {
   const rawStockQuantity =
     item.stock_quantity ??
@@ -240,8 +598,7 @@ function getItemStock(item, catalogProduct, stockQuantity) {
 }
 
 function normalizeCartItems(cartData, productLookup = {}) {
-  const rawItems = getRawCartItems(cartData);
-  const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
+  const items = getCartItemsFromResponse(cartData);
 
   return items.map((item) => {
     const product = item.product || item;
@@ -255,7 +612,7 @@ function normalizeCartItems(cartData, productLookup = {}) {
 
     return {
       id: productId,
-      variantId: item.product_variant_id || variant.id || null,
+      variantId: item.product_variant_id ?? variant.id ?? null,
       variantSize: variant.size || item.variant_size || "",
       name: product.name || item.name || catalogProduct?.name || `Продукт #${productId}`,
       image: getItemImage(item, product, catalogProduct),
@@ -266,11 +623,6 @@ function normalizeCartItems(cartData, productLookup = {}) {
       lineTotal: Number(item.total || item.line_total || price * quantity),
     };
   });
-}
-
-function responseHasCartItems(data) {
-  const rawItems = getRawCartItems(data);
-  return Array.isArray(rawItems) ? rawItems.length > 0 : Object.keys(rawItems || {}).length > 0;
 }
 
 function formatPrice(value) {
@@ -352,16 +704,63 @@ function getAvailableQuantity(item) {
   return item.stockQuantity === null ? Infinity : Math.max(0, item.stockQuantity);
 }
 
+function hasPositiveCartPrice(item) {
+  const price = Number(item?.price);
+  const lineTotal = Number(item?.lineTotal);
+
+  return Number.isFinite(price) && price > 0 && Number.isFinite(lineTotal) && lineTotal > 0;
+}
+
 function toSafeString(value) {
   return typeof value === "string" ? value : "";
 }
 
+function getCartCacheKey() {
+  return `${cartCachePrefix}:${getCartSessionId()}`;
+}
+
+function readCartCache() {
+  try {
+    const rawValue = localStorage.getItem(getCartCacheKey());
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue);
+
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return {
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+      paymentMethods: Array.isArray(parsed.paymentMethods) ? parsed.paymentMethods : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCartCache(snapshot) {
+  try {
+    localStorage.setItem(getCartCacheKey(), JSON.stringify({
+      items: Array.isArray(snapshot?.items) ? snapshot.items : [],
+      paymentMethods: Array.isArray(snapshot?.paymentMethods) ? snapshot.paymentMethods : [],
+      updatedAt: Date.now(),
+    }));
+  } catch {
+    // Ignore storage failures and keep the live cart state in memory.
+  }
+}
+
 export default function Cart() {
-  const [items, setItems] = useState([]);
+  const [cachedCart] = useState(() => readCartCache());
+  const [items, setItems] = useState(() => cachedCart?.items || []);
   const [checkout, setCheckout] = useState(initialCheckout);
   const [offices, setOffices] = useState([]);
   const [officesLoading, setOfficesLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cachedCart);
   const [savingProductId, setSavingProductId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [shippingCost, setShippingCost] = useState(null);
@@ -369,13 +768,13 @@ export default function Cart() {
   const [shippingCostError, setShippingCostError] = useState("");
   const [messages, setMessages] = useState([]);
   const [user, setUser] = useState(null);
-  const [pendingRemovalIds, setPendingRemovalIds] = useState({});
-  const removalTimersRef = useRef({});
+  const [paymentMethods, setPaymentMethods] = useState(() => cachedCart?.paymentMethods || []);
   const productLookupRef = useRef(null);
 
-  const isOfficeDelivery = checkout.shipping_method === "office";
-  const isApmDelivery = checkout.shipping_method === "apm";
-  const needsOffice = isOfficeDelivery || isApmDelivery;
+  const activeShippingMethod = checkout.shipping_method === "apm" ? "office" : checkout.shipping_method;
+  const isOfficeDelivery = activeShippingMethod === "office";
+  const isApmDelivery = false;
+  const needsOffice = isOfficeDelivery;
   const isLoggedIn = Boolean(user);
   const customerName = isLoggedIn ? getUserName(user) : checkout.customer_name;
   const customerEmail = isLoggedIn ? getUserEmail(user) : checkout.customer_email;
@@ -385,11 +784,15 @@ export default function Cart() {
     () => items.reduce((total, item) => total + item.lineTotal, 0),
     [items],
   );
+  const unpricedItems = useMemo(
+    () => items.filter((item) => !hasPositiveCartPrice(item)),
+    [items],
+  );
 
   const checkoutItems = useMemo(
     () => items.map((item) => ({
       product_id: item.id,
-      ...(item.variantId ? { product_variant_id: item.variantId } : {}),
+      ...(hasVariantId(item.variantId) ? { product_variant_id: item.variantId } : {}),
       quantity: item.quantity,
     })),
     [items],
@@ -397,26 +800,35 @@ export default function Cart() {
   const shippingCalculationItems = useMemo(
     () => items.map((item) => ({
       product_id: item.id,
-      variant_id: item.variantId || null,
+      variant_id: hasVariantId(item.variantId) ? item.variantId : null,
       quantity: item.quantity,
     })),
     [items],
   );
 
+  const filteredOffices = useMemo(() => {
+    const apsOffices = offices.filter((office) => office.is_aps === true);
+    const nonApsOffices = offices.filter((office) => office.is_aps === false);
+    const unknownTypeOffices = offices.filter((office) => office.is_aps === null);
+
+    if (isApmDelivery) {
+      return apsOffices.length > 0 ? apsOffices : [...apsOffices, ...unknownTypeOffices];
+    }
+
+    return nonApsOffices.length > 0 ? nonApsOffices : [...nonApsOffices, ...unknownTypeOffices];
+  }, [offices, isApmDelivery]);
   const officePlaceholder = !checkout.shipping_city.trim()
     ? "--Изберете град, за да се заредят офисите--"
     : officesLoading
       ? "Зареждане..."
-      : isApmDelivery
-        ? "--Изберете еконтомат--"
-        : "--Изберете офис--";
-  const officeSelectDisabled = !checkout.shipping_city.trim() || officesLoading;
-  const filteredOffices = useMemo(() => (
-    offices.filter((office) => {
-      const isAps = Boolean(office?.is_aps ?? office?.isAPS ?? office?.isApm);
-      return isApmDelivery ? isAps : !isAps;
-    })
-  ), [offices, isApmDelivery]);
+      : filteredOffices.length === 0
+        ? isApmDelivery
+          ? "--Няма намерени еконтомати--"
+          : "--Няма намерени офиси--"
+        : isApmDelivery
+          ? "--Изберете еконтомат--"
+          : "--Изберете офис--";
+  const officeSelectDisabled = !checkout.shipping_city.trim() || officesLoading || filteredOffices.length === 0;
   const officeOptions = useMemo(
     () => [
       { value: "", label: officePlaceholder, disabled: true },
@@ -431,6 +843,17 @@ export default function Cart() {
     () => filteredOffices.find((office) => String(office.code) === String(checkout.econt_office_code)),
     [filteredOffices, checkout.econt_office_code],
   );
+  const paymentMethodOptions = useMemo(
+    () => [
+      paymentMethodPlaceholder,
+      ...(paymentMethods.length > 0 ? paymentMethods : fallbackPaymentMethods),
+    ],
+    [paymentMethods],
+  );
+  const selectedPaymentMethod = paymentMethodOptions.some((option) => String(option.value) === String(checkout.payment_method))
+    ? checkout.payment_method
+    : "";
+  const stripeEnabled = paymentMethodOptions.some((option) => String(option.value) === "stripe");
   const grandTotal = itemsTotal + (shippingCost ?? 0);
 
   const emptyOfficeSnapshot = {
@@ -440,17 +863,33 @@ export default function Cart() {
     econt_office_is_aps: false,
   };
 
-  async function getProductLookup() {
+  const getProductLookup = useCallback(async () => {
     if (!productLookupRef.current) {
       productLookupRef.current = await fetchProductLookup();
     }
 
     return productLookupRef.current;
-  }
+  }, []);
+
+  const getProductLookupForCart = useCallback(async (cartData) => {
+    return cartNeedsProductLookup(cartData) ? await getProductLookup() : {};
+  }, [getProductLookup]);
+
+  const refreshPaymentMethods = useCallback(async () => {
+    try {
+      const settings = await fetchCheckoutSettings();
+
+      if (settings) {
+        setPaymentMethods(settings.paymentMethods);
+      }
+    } catch {
+      // Keep the last known payment methods if the checkout settings request fails.
+    }
+  }, []);
 
   async function syncCartItems() {
     const cartData = await apiRequest("/api/cart");
-    const lookup = responseHasCartItems(cartData) ? await getProductLookup() : {};
+    const lookup = await getProductLookupForCart(cartData);
     setItems(normalizeCartItems(cartData, lookup));
   }
 
@@ -458,15 +897,18 @@ export default function Cart() {
     let isCancelled = false;
 
     async function loadInitialCart() {
-      setLoading(true);
       setMessages([]);
 
       try {
         const cartData = await apiRequest("/api/cart");
-        const lookup = responseHasCartItems(cartData) ? await getProductLookup() : {};
+        const lookup = await getProductLookupForCart(cartData);
+        const cartPaymentMethods = getResolvedPaymentMethodsFromResponse(cartData);
 
         if (!isCancelled) {
           setItems(normalizeCartItems(cartData, lookup));
+          if (cartPaymentMethods?.length > 0) {
+            setPaymentMethods(cartPaymentMethods);
+          }
         }
       } catch (error) {
         if (!isCancelled) {
@@ -484,11 +926,47 @@ export default function Cart() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [getProductLookupForCart]);
 
-  useEffect(() => () => {
-    Object.values(removalTimersRef.current).forEach(clearTimeout);
-  }, []);
+  useEffect(() => {
+    writeCartCache({ items, paymentMethods });
+  }, [items, paymentMethods]);
+
+  useEffect(() => {
+    refreshPaymentMethods();
+
+    const intervalId = window.setInterval(refreshPaymentMethods, 3000);
+
+    function handleFocus() {
+      if (document.visibilityState === "visible") {
+        refreshPaymentMethods();
+      }
+    }
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [refreshPaymentMethods]);
+
+  useEffect(() => {
+    if (!checkout.payment_method) {
+      return;
+    }
+
+    if (paymentMethodOptions.some((option) => String(option.value) === String(checkout.payment_method))) {
+      return;
+    }
+
+    setCheckout((current) => ({
+      ...current,
+      payment_method: "",
+    }));
+  }, [paymentMethodOptions, checkout.payment_method]);
 
   useEffect(() => {
     if (!getAuthToken()) {
@@ -540,7 +1018,7 @@ export default function Cart() {
         const data = await apiRequest(`/api/checkout/econt-offices?city=${encodeURIComponent(city)}`);
 
         if (!isCancelled) {
-          setOffices(Array.isArray(data?.offices) ? data.offices : []);
+          setOffices(normalizeOfficesResponse(data));
         }
       } catch {
         if (!isCancelled) {
@@ -566,11 +1044,11 @@ export default function Cart() {
 
     async function calculateShipping() {
       const city = toSafeString(checkout.shipping_city).trim();
-      const isOffice = checkout.shipping_method === "office" || checkout.shipping_method === "apm";
-      const isAddress = checkout.shipping_method === "address";
+      const isOffice = activeShippingMethod === "office";
+      const isAddress = activeShippingMethod === "address";
       const hasOfficeData = city && Boolean(selectedOffice);
       const hasAddressData = city && toSafeString(checkout.shipping_postcode).trim() && toSafeString(checkout.shipping_address).trim();
-      const hasPaymentMethod = checkout.payment_method.trim().length > 0;
+      const hasPaymentMethod = selectedPaymentMethod.trim().length > 0;
 
       if ((isOffice && !hasOfficeData) || (isAddress && !hasAddressData) || !hasPaymentMethod) {
         const officeFallback = isOffice ? getOfficeShippingCost(selectedOffice) : null;
@@ -585,9 +1063,9 @@ export default function Cart() {
 
       try {
         const payload = {
-          shipping_method: checkout.shipping_method,
+          shipping_method: activeShippingMethod,
           shipping_city: city,
-          payment_method: checkout.payment_method,
+          payment_method: selectedPaymentMethod,
           items: shippingCalculationItems,
           ...(isAddress
             ? {
@@ -602,21 +1080,6 @@ export default function Cart() {
               }),
         };
 
-        console.log("SHIPPING ADDRESS TYPE DEBUG", typeof checkout.shipping_address, checkout.shipping_address);
-        console.log("SHIPPING DEBUG", {
-          shipping_method: checkout.shipping_method,
-          shipping_city: checkout.shipping_city,
-          shipping_postcode: checkout.shipping_postcode,
-          shipping_address: checkout.shipping_address,
-          checkout_econt_office_code: checkout.econt_office_code,
-          selectedOffice,
-          filteredOffices,
-          selectedOfficeCode: selectedOffice?.code,
-          selectedOfficeName: selectedOffice?.name,
-          selectedOfficeIsAps: selectedOffice?.is_aps,
-          payload,
-        });
-
         const data = await apiRequest("/api/checkout/calculate-shipping", {
           method: "POST",
           body: JSON.stringify(payload),
@@ -630,14 +1093,7 @@ export default function Cart() {
         const fallbackCost = isOffice ? getOfficeShippingCost(selectedOffice) : null;
         setShippingCost(responseCost ?? fallbackCost);
         setShippingCostError(responseCost === null && fallbackCost === null ? "Неуспешно изчисляване на доставка" : "");
-      } catch (error) {
-        console.log("CALCULATE SHIPPING 422", {
-          status: error?.status,
-          message: error?.message,
-          errors: error?.errors,
-          data: error?.data,
-        });
-
+      } catch {
         if (!isCancelled) {
           const fallbackCost = isOffice ? getOfficeShippingCost(selectedOffice) : null;
           setShippingCost(fallbackCost);
@@ -657,27 +1113,28 @@ export default function Cart() {
       window.clearTimeout(timerId);
     };
   }, [
+    activeShippingMethod,
     checkout.shipping_method,
     checkout.shipping_city,
     checkout.shipping_postcode,
     checkout.shipping_address,
     checkout.econt_office_code,
-    checkout.payment_method,
+    selectedPaymentMethod,
     shippingCalculationItems,
     selectedOffice,
-    filteredOffices,
   ]);
 
   function updateCheckoutField(event) {
     const { name, value } = event.target;
+    const normalizedValue = name === "shipping_method" && value === "apm" ? "office" : value;
 
     setCheckout((current) => ({
       ...current,
-      [name]: value,
-      ...(name === "shipping_method" && (value === "office" || value === "apm")
+      [name]: normalizedValue,
+      ...(name === "shipping_method" && normalizedValue === "office"
         ? { shipping_address: "", shipping_postcode: "", ...emptyOfficeSnapshot }
         : {}),
-      ...(name === "shipping_method" && value === "address"
+      ...(name === "shipping_method" && normalizedValue === "address"
         ? { ...emptyOfficeSnapshot }
         : {}),
       ...(name === "shipping_city" ? { ...emptyOfficeSnapshot } : {}),
@@ -713,12 +1170,12 @@ export default function Cart() {
         method: "PATCH",
         body: JSON.stringify({
           quantity: nextQuantity,
-          ...(variantId ? { product_variant_id: variantId } : {}),
+          ...(hasVariantId(variantId) ? { product_variant_id: variantId } : {}),
         }),
       });
 
-      if (responseHasCartItems(data)) {
-        const lookup = responseHasCartItems(data) ? await getProductLookup() : {};
+      if (responseIncludesCartItems(data)) {
+        const lookup = await getProductLookupForCart(data);
         setItems(normalizeCartItems(data, lookup));
       } else {
         setItems((currentItems) => currentItems.map((item) => (
@@ -726,6 +1183,7 @@ export default function Cart() {
             ? { ...item, quantity: nextQuantity, lineTotal: item.price * nextQuantity }
             : item
         )));
+        await syncCartItems();
       }
 
       window.dispatchEvent(new Event("cart:changed"));
@@ -742,31 +1200,33 @@ export default function Cart() {
   }
 
   async function performRemoveItem(productId, variantId = null) {
-    const lineKey = getCartLineKey(productId, variantId);
+    const previousItems = items;
     setSavingProductId(productId);
     setMessages([]);
-    setPendingRemovalIds((current) => {
-      const next = { ...current };
-      delete next[lineKey];
-      return next;
-    });
+    setItems((currentItems) => currentItems.filter((item) => !(item.id === productId && String(item.variantId || "") === String(variantId || ""))));
 
     try {
-      const query = variantId ? `?product_variant_id=${encodeURIComponent(variantId)}` : "";
+      const query = hasVariantId(variantId) ? `?product_variant_id=${encodeURIComponent(variantId)}` : "";
       const data = await apiRequest(`/api/cart/delete/${productId}${query}`, {
         method: "DELETE",
       });
 
-      if (responseHasCartItems(data)) {
-        const lookup = responseHasCartItems(data) ? await getProductLookup() : {};
+      if (responseIncludesCartItems(data)) {
+        const lookup = await getProductLookupForCart(data);
         setItems(normalizeCartItems(data, lookup));
       } else {
-        setItems((currentItems) => currentItems.filter((item) => !(item.id === productId && String(item.variantId || "") === String(variantId || ""))));
+        await syncCartItems();
       }
 
       window.dispatchEvent(new Event("cart:changed"));
     } catch (error) {
       setMessages(normalizeErrors(error));
+      setItems(previousItems);
+      try {
+        await syncCartItems();
+      } catch {
+        // Keep the remove error visible even if refresh fails.
+      }
     } finally {
       setSavingProductId(null);
     }
@@ -777,62 +1237,23 @@ export default function Cart() {
   }
 
   function removeItem(productId, variantId = null) {
-    const lineKey = getCartLineKey(productId, variantId);
-
-    if (pendingRemovalIds[lineKey]) {
-      return;
-    }
-
-    setMessages([]);
-    setPendingRemovalIds((current) => ({ ...current, [lineKey]: true }));
-    removalTimersRef.current[lineKey] = setTimeout(() => {
-      delete removalTimersRef.current[lineKey];
-      performRemoveItem(productId, variantId);
-    }, 4000);
-  }
-
-  function cancelRemoveItem(productId, variantId = null) {
-    const lineKey = getCartLineKey(productId, variantId);
-    clearTimeout(removalTimersRef.current[lineKey]);
-    delete removalTimersRef.current[lineKey];
-    setPendingRemovalIds((current) => {
-      const next = { ...current };
-      delete next[lineKey];
-      return next;
-    });
-  }
-
-  async function clearCart() {
-    setMessages([]);
-    Object.values(removalTimersRef.current).forEach(clearTimeout);
-    removalTimersRef.current = {};
-    setPendingRemovalIds({});
-
-    try {
-      await apiRequest("/api/cart", { method: "DELETE" });
-      setItems([]);
-      window.dispatchEvent(new Event("cart:changed"));
-    } catch (error) {
-      setMessages(normalizeErrors(error));
-    }
+    performRemoveItem(productId, variantId);
   }
 
   function buildCheckoutPayload() {
-    const isAddressDelivery = checkout.shipping_method === "address";
+    const isAddressDelivery = activeShippingMethod === "address";
     const payload = {
-      shipping_method: checkout.shipping_method,
+      session_id: getCartSessionId(),
+      customer_name: customerName.trim(),
+      customer_email: customerEmail.trim(),
+      customer_phone: normalizePhone(customerPhone),
+      shipping_method: activeShippingMethod,
       shipping_city: checkout.shipping_city.trim(),
-      payment_method: checkout.payment_method,
+      payment_method: selectedPaymentMethod,
       locale: "bg",
       notes: checkout.notes.trim(),
       items: checkoutItems,
     };
-
-    if (!isLoggedIn) {
-      payload.customer_name = checkout.customer_name.trim();
-      payload.customer_email = checkout.customer_email.trim();
-      payload.customer_phone = normalizePhone(checkout.customer_phone);
-    }
 
     if (isAddressDelivery) {
       payload.shipping_address = checkout.shipping_address.trim();
@@ -871,7 +1292,7 @@ export default function Cart() {
       errors.push("Въведете град за доставка.");
     }
 
-    if (checkout.shipping_method === "address") {
+    if (activeShippingMethod === "address") {
       if (!checkout.shipping_postcode.trim()) {
         errors.push("Въведете пощенски код.");
       }
@@ -885,8 +1306,10 @@ export default function Cart() {
       errors.push("Изберете офис за доставка.");
     }
 
-    if (!checkout.payment_method) {
+    if (!selectedPaymentMethod) {
       errors.push("Изберете метод на плащане.");
+    } else if (selectedPaymentMethod === "stripe" && !stripeEnabled) {
+      errors.push("Плащането с карта временно не е налично.");
     }
 
     items.forEach((item) => {
@@ -900,6 +1323,11 @@ export default function Cart() {
       if (item.quantity > availableQuantity) {
         errors.push(`Не може да закупите повече от ${item.name}.`);
       }
+    });
+
+    unpricedItems.forEach((item) => {
+      const variantLabel = item.variantSize ? ` (${item.variantSize})` : "";
+      errors.push(`${item.name}${variantLabel} няма въведена цена и не може да бъде поръчан.`);
     });
 
     if (isLoggedIn && errors.includes(PHONE_ERROR)) {
@@ -988,7 +1416,6 @@ export default function Cart() {
             <section className="cart-items-panel">
               <div className="cart-panel-heading">
                 <h2>Продукти</h2>
-                <button type="button" onClick={clearCart}>Изчисти количката</button>
               </div>
 
               <div className="cart-items">
@@ -996,7 +1423,7 @@ export default function Cart() {
                   <article className="cart-item" key={getCartLineKey(item.id, item.variantId)}>
                     <div className="cart-product-info">
                       <div className="cart-product-thumb">
-                        {item.image ? <img src={item.image} alt="" /> : <span>{item.name.charAt(0)}</span>}
+                        {item.image ? <img src={item.image} alt="" loading="lazy" decoding="async" /> : <span>{item.name.charAt(0)}</span>}
                       </div>
                       <div>
                         <h3>{item.name}</h3>
@@ -1034,23 +1461,20 @@ export default function Cart() {
                     <strong>{formatPrice(item.lineTotal)}</strong>
                     <button
                       type="button"
+                      className="cart-remove-button"
                       onClick={() => removeItem(item.id, item.variantId)}
-                      disabled={savingProductId === item.id || pendingRemovalIds[getCartLineKey(item.id, item.variantId)]}
+                      disabled={savingProductId === item.id}
+                      aria-label={`Премахни ${item.name} от количката`}
+                      title="Премахни продукта"
                     >
-                      Премахни продукта
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 7h16" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                        <path d="M6 7l1 14h10l1-14" />
+                        <path d="M9 7V4h6v3" />
+                      </svg>
                     </button>
-
-                    {pendingRemovalIds[getCartLineKey(item.id, item.variantId)] && (
-                      <div className="cart-remove-confirm">
-                        <div>
-                          <p>Сигурни ли сте, че искате да премахнете продукта от количката?</p>
-                          <span className="cart-remove-timer" aria-hidden="true" />
-                        </div>
-                        <button type="button" onClick={() => cancelRemoveItem(item.id, item.variantId)}>
-                          Отмяна
-                        </button>
-                      </div>
-                    )}
                   </article>
                 ))}
               </div>
@@ -1095,7 +1519,7 @@ export default function Cart() {
                   Метод на доставка
                   <CustomSelect
                     name="shipping_method"
-                    value={checkout.shipping_method}
+                    value={activeShippingMethod}
                     onChange={updateCheckoutField}
                     options={shippingMethodOptions}
                   />
@@ -1105,7 +1529,7 @@ export default function Cart() {
                   <input name="shipping_city" value={checkout.shipping_city} onChange={updateCheckoutField} />
                 </label>
 
-                {checkout.shipping_method === "address" && (
+                {activeShippingMethod === "address" && (
                   <>
                     <label>
                       Пощенски код
@@ -1138,7 +1562,7 @@ export default function Cart() {
                   Метод на плащане
                   <CustomSelect
                     name="payment_method"
-                    value={checkout.payment_method}
+                    value={selectedPaymentMethod}
                     onChange={updateCheckoutField}
                     options={paymentMethodOptions}
                     placeholder="--Изберете метод за плащане--"

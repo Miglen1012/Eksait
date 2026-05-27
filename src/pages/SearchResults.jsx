@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, normalizeErrors } from "../api/client";
-import { formatPrice, getPurchasableState, normalizeProducts, stripHtml } from "../utils/products";
-import { getProductUrl } from "../utils/search";
+import { fetchProducts, getCachedProducts } from "../api/products";
+import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
+import { DEFAULT_PRODUCT_PAGE_SIZE, getPageSizeFromSearch } from "../utils/pagination";
+import { formatPrice, normalizeProducts, stripHtml } from "../utils/products";
+import { getProductUrl, normalizeSearchText } from "../utils/search";
 import "../styles/products.css";
-
-const PRODUCTS_PER_PAGE = 12;
 
 function getSearchQuery() {
   return new URLSearchParams(window.location.search).get("q")?.trim() || "";
@@ -15,16 +16,32 @@ function getPageFromSearch() {
   return Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
 }
 
+function getProductSearchText(product) {
+  if (product?.searchText) {
+    return String(product.searchText);
+  }
+
+  return normalizeSearchText([
+    product?.name,
+    product?.slug,
+    product?.material,
+    stripHtml(product?.description),
+    ...(product?.categories || []).map((category) => category?.name),
+  ].filter(Boolean).join(" "));
+}
+
 export default function SearchResults() {
   const [query, setQuery] = useState(getSearchQuery());
   const [products, setProducts] = useState([]);
   const [currentPage, setCurrentPage] = useState(getPageFromSearch);
-  const [loading, setLoading] = useState(true);
+  const [productsPerPage, setProductsPerPage] = useState(getPageSizeFromSearch);
+  const [loading, setLoading] = useState(() => !getCachedProducts());
   const [messages, setMessages] = useState([]);
   const productsMainRef = useRef(null);
-  const totalPages = Math.max(1, Math.ceil(products.length / PRODUCTS_PER_PAGE));
+  const totalProductsCount = products.length;
+  const totalPages = Math.max(1, Math.ceil(products.length / productsPerPage));
   const visibleCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedProducts = products.slice((visibleCurrentPage - 1) * PRODUCTS_PER_PAGE, visibleCurrentPage * PRODUCTS_PER_PAGE);
+  const paginatedProducts = products.slice((visibleCurrentPage - 1) * productsPerPage, visibleCurrentPage * productsPerPage);
 
   const refreshSearchProducts = useCallback(async (searchQuery = query) => {
     if (!searchQuery) {
@@ -32,14 +49,28 @@ export default function SearchResults() {
       return;
     }
 
-    const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(searchQuery)}&limit=48`);
-    setProducts(normalizeProducts(data));
-  }, [query]);
+    const normalizedQuery = normalizeSearchText(searchQuery);
+    const searchLimit = Math.max(48, productsPerPage * 6);
+
+    try {
+      const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(searchQuery)}&limit=${searchLimit}`);
+      setProducts(normalizeProducts(data));
+      return;
+    } catch (error) {
+      if (error?.status !== 404) {
+        throw error;
+      }
+    }
+
+    const allProducts = await fetchProducts();
+    setProducts(allProducts.filter((product) => getProductSearchText(product).includes(normalizedQuery)));
+  }, [productsPerPage, query]);
 
   useEffect(() => {
     function handleNavigation() {
       setQuery(getSearchQuery());
       setCurrentPage(getPageFromSearch());
+      setProductsPerPage(getPageSizeFromSearch());
     }
 
     window.addEventListener("popstate", handleNavigation);
@@ -60,6 +91,12 @@ export default function SearchResults() {
       nextSearch.delete("page");
     }
 
+    if (productsPerPage !== DEFAULT_PRODUCT_PAGE_SIZE) {
+      nextSearch.set("per_page", String(productsPerPage));
+    } else {
+      nextSearch.delete("per_page");
+    }
+
     const nextSearchText = nextSearch.toString();
     const nextUrl = `${window.location.pathname}${nextSearchText ? `?${nextSearchText}` : ""}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -70,7 +107,7 @@ export default function SearchResults() {
 
     window.history.pushState(window.history.state || {}, "", nextUrl);
     window.dispatchEvent(new Event("app:navigate"));
-  }, [visibleCurrentPage]);
+  }, [productsPerPage, visibleCurrentPage]);
 
   useEffect(() => {
     async function loadProducts() {
@@ -80,7 +117,9 @@ export default function SearchResults() {
         return;
       }
 
-      setLoading(true);
+      if (!getCachedProducts()) {
+        setLoading(true);
+      }
       setMessages([]);
 
       try {
@@ -104,6 +143,11 @@ export default function SearchResults() {
     window.scrollTo({ top: Math.max(0, top), left: 0, behavior: "auto" });
   }, [visibleCurrentPage, loading]);
 
+  function handleProductsPerPageChange(value) {
+    setProductsPerPage(value);
+    setCurrentPage(1);
+  }
+
   return (
     <main className="products-page">
       <div className="products-layout">
@@ -112,6 +156,16 @@ export default function SearchResults() {
             <span className="products-kicker">Търсене</span>
             <h1>{query ? `Продукти с името "${query}"` : "Търсене на продукти"}</h1>
             <p>Резултатите се търсят по име, категория, описание и код на продукта.</p>
+            <div className="products-filter-footer products-heading-meta">
+              <div className="products-filter-meta">
+                <strong>{totalProductsCount}</strong>
+                <span>{totalProductsCount === 1 ? "намерен продукт" : "намерени продукта"}</span>
+              </div>
+              <ProductPageSizeSelect
+                pageSize={productsPerPage}
+                onPageSizeChange={handleProductsPerPageChange}
+              />
+            </div>
           </div>
 
           <div className="products-main" ref={productsMainRef}>
@@ -125,7 +179,7 @@ export default function SearchResults() {
 
             {loading ? (
               <div className="products-empty">Зареждане...</div>
-            ) : products.length === 0 ? (
+            ) : totalProductsCount === 0 ? (
               <div className="products-empty search-empty">
                 <h2>Няма намерени резултати{query ? ` за "${query}"` : ""}.</h2>
                 <p>Опитайте с друго име или разгледайте всички продукти.</p>
@@ -135,16 +189,16 @@ export default function SearchResults() {
               <>
                 <div className="products-grid">
                   {paginatedProducts.map((product) => {
-                  const categoryNames = product.categories.map((category) => category.name).join(", ");
-                  const purchasable = getPurchasableState(product, "");
+                  const categoryNames = product.categoryNames || product.categories.map((category) => category.name).join(", ");
                   const productUrl = getProductUrl(product);
+                  const plainDescription = product.plainDescription || "";
 
                   return (
                     <article className="product-card-item" key={product.id}>
                       <a className="product-card-media" href={productUrl}>
                         <span className="product-card-media-frame">
                           {product.image ? (
-                            <img src={product.image} alt={product.name} />
+                            <img src={product.image} alt={product.name} loading="lazy" decoding="async" />
                           ) : (
                             <span className="product-card-media-placeholder">Продукт</span>
                           )}
@@ -153,13 +207,13 @@ export default function SearchResults() {
                       <div className="product-card-content">
                         {categoryNames && <span>{categoryNames}</span>}
                         <h2><a href={productUrl}>{product.name}</a></h2>
-                        {product.description && <p>{stripHtml(product.description)}</p>}
+                        {plainDescription && <p>{plainDescription}</p>}
 
                         <div className="product-card-footer">
                           {product.hasVariants ? (
                             <span className="product-card-footer-info product-card-footer-info--variant">Натисни преглед за още подробности</span>
                           ) : (
-                            <strong>{formatPrice(purchasable.price)}</strong>
+                            <strong>{formatPrice(product.price)}</strong>
                           )}
 
                           <a href={productUrl} className="product-card-action">Преглед</a>
@@ -170,45 +224,11 @@ export default function SearchResults() {
                   })}
                 </div>
 
-                {totalPages > 1 && (
-                  <nav className="products-pagination" aria-label="Pagination">
-                    <button
-                      type="button"
-                      className="products-pagination-button"
-                      onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                      disabled={visibleCurrentPage === 1}
-                    >
-                      Назад
-                    </button>
-
-                    <div className="products-pagination-pages">
-                      {Array.from({ length: totalPages }, (_, index) => {
-                        const pageNumber = index + 1;
-
-                        return (
-                          <button
-                            type="button"
-                            key={pageNumber}
-                            className={pageNumber === visibleCurrentPage ? "products-page-number is-active" : "products-page-number"}
-                            onClick={() => setCurrentPage(pageNumber)}
-                            aria-current={pageNumber === visibleCurrentPage ? "page" : undefined}
-                          >
-                            {pageNumber}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      type="button"
-                      className="products-pagination-button"
-                      onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                      disabled={visibleCurrentPage === totalPages}
-                    >
-                      Напред
-                    </button>
-                  </nav>
-                )}
+                <ProductPagination
+                  currentPage={visibleCurrentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                />
               </>
             )}
           </div>

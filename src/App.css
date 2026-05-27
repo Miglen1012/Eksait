@@ -8,8 +8,8 @@
   --dark: #15171c;
   --red: #e63946;
   --red-dark: #c82333;
-  --shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
-  --radius: 22px;
+  --shadow: 0 16px 38px rgba(15, 23, 42, 0.07);
+  --radius: 16px;
 }
 
 * { box-sizing: border-box; }
@@ -21,6 +21,8 @@ html {
 body {
   margin: 0;
   font-family: Inter, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--text);
   background:
     linear-gradient(135deg, rgba(215, 25, 32, 0.045), transparent 34%),
@@ -65,8 +67,8 @@ button { font: inherit; cursor: pointer; }
 }
 
 .scroll-top-button {
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   position: fixed;
   right: 24px;
   bottom: 24px;
@@ -136,7 +138,7 @@ button { font: inherit; cursor: pointer; }
   border-radius: 10px;
   padding: 12px 14px;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.45;
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
   transform: translateX(-50%);
@@ -156,14 +158,14 @@ button { font: inherit; cursor: pointer; }
 
 .hero-slider {
   width: min(1260px, calc(100% - 32px));
-  height: clamp(320px, 42vw, 560px);
+  height: clamp(300px, 38vw, 500px);
   position: relative;
   z-index: 1;
-  margin: 34px auto 0;
+  margin: 28px auto 0;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 16px;
   background: #15171c;
-  box-shadow: 0 26px 60px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.18);
 }
 
 .hero-slider::after {
@@ -214,7 +216,7 @@ button { font: inherit; cursor: pointer; }
   margin-bottom: 14px;
   color: #ffffff;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
   border-bottom: 3px solid var(--red);
@@ -225,8 +227,8 @@ button { font: inherit; cursor: pointer; }
   max-width: 680px;
   min-height: 1.96em;
   margin: 0;
-  font-size: clamp(34px, 5vw, 66px);
-  line-height: 0.98;
+  font-size: clamp(30px, 4.2vw, 54px);
+  line-height: 1.04;
   letter-spacing: 0;
 }
 
@@ -235,12 +237,12 @@ button { font: inherit; cursor: pointer; }
   min-height: 3.1em;
   margin: 18px 0 26px;
   color: rgba(255, 255, 255, 0.86);
-  font-size: clamp(16px, 1.6vw, 20px);
+  font-size: clamp(15px, 1.35vw, 18px);
   line-height: 1.55;
 }
 
 .hero-slide-button {
-  min-height: 48px;
+  min-height: 44px;
   position: relative;
   overflow: hidden;
   display: inline-flex;
@@ -251,9 +253,9 @@ button { font: inherit; cursor: pointer; }
   background: linear-gradient(135deg, #d71920 0%, #b9151d 100%);
   border: 2px solid #c91820;
   border-radius: 4px;
-  font-weight: 900;
+  font-weight: 800;
   text-transform: uppercase;
-  font-size: 14px;
+  font-size: 13px;
   box-shadow: none;
   transition: color 0.28s ease, transform 0.18s ease;
   z-index: 1;
@@ -312,7 +314,7 @@ button { font: inherit; cursor: pointer; }
 }
 
 .header-grid {
-  min-height: 96px;
+  min-height: 84px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -326,12 +328,12 @@ button { font: inherit; cursor: pointer; }
 }
 
 .logo-mark {
-  width: 72px;
-  height: 46px;
-  border-radius: 14px;
+  width: 64px;
+  height: 42px;
+  border-radius: 12px;
   background: linear-gradient(135deg, var(--red), #ff737d);
   color: #fff;
-  font-weight: 900;
+  font-weight: 800;
   display: grid;
   place-items: center;
   letter-spacing: -2px;
@@ -339,8 +341,8 @@ button { font: inherit; cursor: pointer; }
 }
 
 .logo-title {
-  font-size: 22px;
-  font-weight: 900;
+  font-size: 19px;
+  font-weight: 800;
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
@@ -361,7 +363,7 @@ button { font: inherit; cursor: pointer; }
 
 .search-box {
   display: flex;
-  width: 340px;
+  width: 320px;
   background: var(--surface-soft);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -373,7 +375,7 @@ button { font: inherit; cursor: pointer; }
   border: 0;
   outline: 0;
   background: transparent;
-  padding: 12px 16px;
+  padding: 10px 14px;
 }
 
 .search-box button {
@@ -400,9 +402,9 @@ button { font: inherit; cursor: pointer; }
 
 .nav-inner a {
   color: #fff;
-  padding: 18px 20px;
-  font-size: 14px;
-  font-weight: 800;
+  padding: 15px 17px;
+  font-size: 13px;
+  font-weight: 750;
   text-transform: uppercase;
   transition: 0.2s ease;
 }
@@ -415,7 +417,7 @@ button { font: inherit; cursor: pointer; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   gap: clamp(20px, 3vw, 28px);
-  padding: 30px 0 60px;
+  padding: 26px 0 54px;
 }
 
 .product-card,
@@ -428,7 +430,7 @@ button { font: inherit; cursor: pointer; }
 
 .product-card {
   min-width: 0;
-  padding: clamp(18px, 2.4vw, 28px);
+  padding: clamp(16px, 2.2vw, 24px);
 }
 
 .breadcrumbs {
@@ -513,8 +515,8 @@ button { font: inherit; cursor: pointer; }
 
 .product-info h1 {
   margin: 16px 0 14px;
-  font-size: clamp(30px, 4vw, 54px);
-  line-height: 1.04;
+  font-size: clamp(26px, 3.2vw, 42px);
+  line-height: 1.1;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
@@ -531,8 +533,8 @@ button { font: inherit; cursor: pointer; }
 
 .short-description {
   color: var(--muted);
-  font-size: 17px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.65;
   max-width: 540px;
 }
 
@@ -554,8 +556,8 @@ button { font: inherit; cursor: pointer; }
 .primary-btn,
 .secondary-btn {
   border-radius: 999px;
-  padding: 14px 22px;
-  font-weight: 900;
+  padding: 12px 20px;
+  font-weight: 800;
   border: 1px solid transparent;
 }
 
@@ -586,7 +588,7 @@ button { font: inherit; cursor: pointer; }
   background: transparent;
   padding: 16px 18px;
   color: var(--muted);
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .tabs .active {
@@ -784,7 +786,7 @@ button { font: inherit; cursor: pointer; }
   }
   .hero-slide-content h1 {
     min-height: auto;
-    font-size: clamp(31px, 10vw, 46px);
+    font-size: clamp(28px, 9vw, 40px);
   }
   .hero-slide-content p {
     min-height: auto;

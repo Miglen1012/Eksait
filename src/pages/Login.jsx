@@ -142,7 +142,7 @@ export default function Login() {
               <input type="checkbox" name="remember" />
               Запомни ме
             </label>
-            <a href="#">Забравена парола?</a>
+            <a href="/forgot-password">Забравена парола?</a>
           </div>
 
           <button type="submit" disabled={isLoginDisabled}>

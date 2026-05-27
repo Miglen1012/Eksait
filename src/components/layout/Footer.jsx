@@ -9,7 +9,7 @@ export default function Footer() {
       <div className="layout-container footer-container">
         <div className="footer-brand">
           <a href="/" className="footer-logo-link" aria-label="Excite Company начало">
-            <img src={logo} alt="Excite Company" className="footer-logo" />
+            <img src={logo} alt="Excite Company" className="footer-logo" loading="lazy" decoding="async" />
           </a>
 
           <h4>Ексайт Къмпани ООД</h4>
@@ -28,7 +28,7 @@ export default function Footer() {
             <li><a href="/">Начало</a></li>
             <li><a href="/about">За нас</a></li>
             <li><a href="/category">Инструменти</a></li>
-            <li><a href="#">Оборудване</a></li>
+            <li><a href="/equipment">Оборудване</a></li>
             <li><a href="/contact">Контакти</a></li>
           </ul>
         </div>

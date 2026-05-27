@@ -48,14 +48,20 @@ export function productMatchesSearch(product, query) {
     return false;
   }
 
-  const searchableText = [
-    product.name,
-    product.slug,
-    product.description,
-    ...(product.categories || []).map((category) => category.name),
-  ].join(" ");
+  const searchText = product?.searchText
+    ? String(product.searchText)
+    : normalizeSearchText(
+        [
+          product?.name,
+          product?.slug,
+          product?.plainDescription || product?.description,
+          ...(product?.categories || []).map((category) => category?.name),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
 
-  return normalizeSearchText(searchableText).includes(normalizedQuery);
+  return searchText.includes(normalizedQuery);
 }
 
 export function getProductUrl(product) {

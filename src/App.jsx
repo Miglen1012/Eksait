@@ -12,14 +12,21 @@ import Cart from "./pages/Cart";
 import CheckoutResult from "./pages/CheckoutResult";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Orders from "./pages/Orders";
 import CategoryPage from "./pages/CategoryPage";
 import ProductShow from "./pages/ProductShow";
 import SearchResults from "./pages/SearchResults";
+import Equipment from "./pages/Equipment";
 
 function getCurrentPage(path) {
   if (path === "/about") {
     return <AboutUs />;
+  }
+
+  if (path === "/equipment") {
+    return <Equipment />;
   }
 
   if (path === "/terms" || path === "/terms-and-conditions") {
@@ -40,6 +47,14 @@ function getCurrentPage(path) {
 
   if (path === "/register") {
     return <Register />;
+  }
+
+  if (path === "/forgot-password") {
+    return <ForgotPassword />;
+  }
+
+  if (path === "/reset-password" || path.startsWith("/reset-password/")) {
+    return <ResetPassword />;
   }
 
   if (path === "/orders") {
@@ -75,7 +90,8 @@ function getCurrentPage(path) {
 
 export default function App() {
   const [path, setPath] = useState(window.location.pathname);
-  const scrollFrameRef = useRef(0);
+  const pathRef = useRef(window.location.pathname);
+  const latestScrollYRef = useRef(window.scrollY);
 
   function persistCurrentEntryScroll() {
     const currentState = window.history.state || {};
@@ -83,7 +99,7 @@ export default function App() {
       {
         ...currentState,
         __appScrollState: true,
-        scrollY: window.scrollY,
+        scrollY: latestScrollYRef.current,
       },
       "",
       `${window.location.pathname}${window.location.search}${window.location.hash}`,
@@ -94,8 +110,12 @@ export default function App() {
     const safeY = Number.isFinite(targetY) ? Math.max(0, targetY) : 0;
     window.scrollTo(0, safeY);
     window.requestAnimationFrame(() => window.scrollTo(0, safeY));
-    window.setTimeout(() => window.scrollTo(0, safeY), 120);
-    window.setTimeout(() => window.scrollTo(0, safeY), 320);
+    latestScrollYRef.current = safeY;
+  }
+
+  function updatePath(nextPath) {
+    pathRef.current = nextPath;
+    setPath(nextPath);
   }
 
   useEffect(() => {
@@ -116,19 +136,8 @@ export default function App() {
       );
     }
 
-    function handleNavigation() {
-      setPath(window.location.pathname);
-    }
-
     function handleScroll() {
-      if (scrollFrameRef.current) {
-        window.cancelAnimationFrame(scrollFrameRef.current);
-      }
-
-      scrollFrameRef.current = window.requestAnimationFrame(() => {
-        persistCurrentEntryScroll();
-        scrollFrameRef.current = 0;
-      });
+      latestScrollYRef.current = window.scrollY;
     }
 
     function handleInternalLinkClick(event) {
@@ -151,18 +160,20 @@ export default function App() {
       event.preventDefault();
       persistCurrentEntryScroll();
       window.history.pushState({ __appScrollState: true, scrollY: 0 }, "", `${url.pathname}${url.search}${url.hash}`);
-      handleNavigation();
+      updatePath(url.pathname);
       restoreScrollPosition(0);
       window.dispatchEvent(new Event("app:navigate"));
     }
 
     function handlePopState(event) {
-      setPath(window.location.pathname);
+      updatePath(window.location.pathname);
       restoreScrollPosition(event.state?.scrollY ?? 0);
     }
 
     function handleAppNavigate() {
       const currentState = window.history.state || {};
+      const nextPath = window.location.pathname;
+      const pathChanged = pathRef.current !== nextPath;
 
       if (!currentState.__appScrollState) {
         window.history.replaceState(
@@ -176,24 +187,24 @@ export default function App() {
         );
       }
 
-      setPath(window.location.pathname);
-      restoreScrollPosition(0);
+      if (pathChanged) {
+        updatePath(nextPath);
+        restoreScrollPosition(0);
+      }
     }
 
     document.addEventListener("click", handleInternalLinkClick);
     window.addEventListener("scroll", handleScroll, { passive: true });
     window.addEventListener("popstate", handlePopState);
     window.addEventListener("app:navigate", handleAppNavigate);
+    window.addEventListener("pagehide", persistCurrentEntryScroll);
 
     return () => {
-      if (scrollFrameRef.current) {
-        window.cancelAnimationFrame(scrollFrameRef.current);
-      }
-
       document.removeEventListener("click", handleInternalLinkClick);
       window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("app:navigate", handleAppNavigate);
+      window.removeEventListener("pagehide", persistCurrentEntryScroll);
     };
   }, []);
 

@@ -1,16 +1,19 @@
 ﻿import { useEffect, useState } from "react";
 import { apiRequest, clearAuthToken, getAuthToken } from "../../api/client";
+import { fetchEquipmentProducts } from "../../api/equipment";
+import { fetchProducts } from "../../api/products";
+import { getCartItemCount } from "../../utils/cart";
 import { normalizeProducts } from "../../utils/products";
-import { getProductUrl } from "../../utils/search";
+import { getProductUrl, productMatchesSearch } from "../../utils/search";
 import logo from "../../assets/es-logo1.png";
 import "../../styles/layout.css";
 
 const navItems = [
-  { label: "Начало", href: "/" },
-  { label: "За нас", href: "/about" },
-  { label: "Инструменти", href: "/category" },
-  { label: "Оборудване", href: "#" },
-  { label: "Контакти", href: "/contact" },
+  { key: "home", label: "Начало", href: "/" },
+  { key: "about", label: "За нас", href: "/about" },
+  { key: "tools", label: "Инструменти", href: "/category" },
+  { key: "equipment", label: "Оборудване", href: "/equipment" },
+  { key: "contact", label: "Контакти", href: "/contact" },
 ];
 
 function getUserFromResponse(data) {
@@ -25,23 +28,6 @@ function getInitial(name) {
   return name.trim().charAt(0).toUpperCase() || "П";
 }
 
-function getCartItems(data) {
-  const rawItems =
-    data?.items ||
-    data?.cart?.items ||
-    data?.cart_items ||
-    data?.data?.items ||
-    data?.data?.cart?.items ||
-    data?.data?.cart_items ||
-    data?.data ||
-    [];
-  return Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
-}
-
-function getCartCount(data) {
-  return getCartItems(data).reduce((total, item) => total + Number(item.quantity || item.qty || 1), 0);
-}
-
 export default function Header() {
   const [user, setUser] = useState(null);
   const [cartCount, setCartCount] = useState(0);
@@ -49,6 +35,7 @@ export default function Header() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [hasEquipmentProducts, setHasEquipmentProducts] = useState(null);
   const trimmedSearchQuery = searchQuery.trim();
   const visibleSearchSuggestions = isSearchFocused && trimmedSearchQuery.length >= 2 ? searchSuggestions : [];
 
@@ -77,7 +64,7 @@ export default function Header() {
       try {
         const data = await apiRequest("/api/cart");
         if (isMounted) {
-          setCartCount(getCartCount(data));
+          setCartCount(getCartItemCount(data));
         }
       } catch {
         if (isMounted) {
@@ -86,8 +73,22 @@ export default function Header() {
       }
     }
 
+    async function loadEquipmentAvailability() {
+      try {
+        const equipmentProducts = await fetchEquipmentProducts();
+        if (isMounted) {
+          setHasEquipmentProducts(equipmentProducts.length > 0);
+        }
+      } catch {
+        if (isMounted) {
+          setHasEquipmentProducts(null);
+        }
+      }
+    }
+
     loadUser();
     loadCartCount();
+    loadEquipmentAvailability();
 
     function handleCartChanged() {
       loadCartCount();
@@ -109,10 +110,22 @@ export default function Header() {
     let isCancelled = false;
     const timer = window.setTimeout(async () => {
       try {
-        const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(trimmedSearchQuery)}&limit=6`);
+        let suggestions = [];
+
+        try {
+          const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(trimmedSearchQuery)}&limit=6`);
+          suggestions = normalizeProducts(data);
+        } catch (error) {
+          if (error?.status !== 404) {
+            throw error;
+          }
+
+          const products = await fetchProducts();
+          suggestions = products.filter((product) => productMatchesSearch(product, trimmedSearchQuery)).slice(0, 6);
+        }
 
         if (!isCancelled) {
-          setSearchSuggestions(normalizeProducts(data));
+          setSearchSuggestions(suggestions);
         }
       } catch {
         if (!isCancelled) {
@@ -190,12 +203,15 @@ export default function Header() {
   }
 
   const userName = getUserName(user);
+  const visibleNavItems = hasEquipmentProducts === false
+    ? navItems.filter((item) => item.key !== "equipment")
+    : navItems;
 
   return (
     <header className="site-header">
       <div className="layout-container header-bar">
         <a href="/" className="brand-link" aria-label="Excite Company начало">
-          <img src={logo} alt="Excite Company" className="brand-logo" />
+          <img src={logo} alt="Excite Company" className="brand-logo" decoding="async" />
         </a>
 
         <div className="header-content">
@@ -214,7 +230,7 @@ export default function Header() {
 
           <div id="mobile-navigation-panel" className={isMobileMenuOpen ? "header-mobile-panel is-open" : "header-mobile-panel"}>
             <nav className="header-nav" aria-label="Основна навигация">
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <div className="nav-item" key={item.label}>
                   <a href={item.href} className="nav-link" onClick={() => setIsMobileMenuOpen(false)}>
                     {item.label}
@@ -244,7 +260,7 @@ export default function Header() {
                   <div className="search-suggestions">
                     {visibleSearchSuggestions.map((product) => (
                       <button type="button" onMouseDown={() => openProduct(product)} key={product.id}>
-                        {product.image && <img src={product.image} alt="" />}
+                        {product.image && <img src={product.image} alt="" loading="lazy" decoding="async" />}
                         <span>{product.name}</span>
                       </button>
                     ))}

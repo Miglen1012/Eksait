@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiRequest, getFieldErrors, getTokenFromResponse, handleApiErrorByStatus, normalizeErrors, setAuthToken } from "../api/client";
+import { apiRequest, getCartSessionId, getFieldErrors, getTokenFromResponse, handleApiErrorByStatus, normalizeErrors, setAuthToken } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
 import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/auth.css";
@@ -61,6 +61,7 @@ export default function Register() {
       phone,
       password,
       password_confirmation: passwordConfirmation,
+      session_id: getCartSessionId(),
     };
 
     try {

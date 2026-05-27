@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import HeroSlider from "../components/home/HeroSlider";
-import { apiRequest, normalizeErrors } from "../api/client";
-import { normalizeProducts } from "../utils/products";
+import { normalizeErrors } from "../api/client";
+import { fetchProducts, getCachedProducts } from "../api/products";
 import logo from "../assets/logo-widget.png";
 import promoImageMerged from "../assets/pics/Untitled-3.jpg";
 import "../styles/home.css";
@@ -70,7 +70,7 @@ function HomeCategorySection({ section, products }) {
                 <article className="home-product-card" key={product.id}>
                   <a href={productPath} className="home-product-image" aria-label={product.name}>
                     {product.image ? (
-                      <img src={product.image} alt={product.name} />
+                      <img src={product.image} alt={product.name} loading="lazy" decoding="async" />
                     ) : (
                       <span>Няма снимка</span>
                     )}
@@ -93,22 +93,24 @@ function HomeCategorySection({ section, products }) {
 }
 
 export default function HomePage() {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState(() => getCachedProducts() || []);
+  const [loading, setLoading] = useState(() => !getCachedProducts());
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadProducts() {
-      setLoading(true);
+      if (!getCachedProducts()) {
+        setLoading(true);
+      }
       setMessages([]);
 
       try {
-        const data = await apiRequest("/api/products");
+        const nextProducts = await fetchProducts();
 
         if (isMounted) {
-          setProducts(normalizeProducts(data));
+          setProducts(nextProducts);
         }
       } catch (error) {
         if (isMounted) {
@@ -146,12 +148,12 @@ export default function HomePage() {
 
       <div className="layout-container home-content-panel">
         <section className="home-promo-images" aria-label="Акценти">
-          <img src={promoImageMerged} alt="Промо изображения" />
+          <img src={promoImageMerged} alt="Промо изображения" loading="lazy" decoding="async" />
         </section>
 
         <section className="home-brand-block" aria-label="За Ексайт Къмпани">
           <div className="home-brand-logo-wrap">
-            <img src={logo} alt="Excite Company" />
+            <img src={logo} alt="Excite Company" decoding="async" />
           </div>
 
           <div className="home-brand-video-wrap">

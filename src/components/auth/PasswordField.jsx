@@ -20,8 +20,18 @@ function EyeOffIcon() {
   );
 }
 
-export default function PasswordField({ label, name, autoComplete }) {
+export default function PasswordField({
+  label,
+  name,
+  autoComplete,
+  error = "",
+  id,
+  onChange,
+  value,
+}) {
   const [isVisible, setIsVisible] = useState(false);
+  const inputId = id || name;
+  const errorId = error ? `${inputId}-error` : undefined;
 
   return (
     <label>
@@ -29,8 +39,13 @@ export default function PasswordField({ label, name, autoComplete }) {
       <span className="password-field">
         <input
           type={isVisible ? "text" : "password"}
+          id={inputId}
           name={name}
           autoComplete={autoComplete}
+          value={value}
+          onChange={onChange}
+          aria-invalid={error ? "true" : undefined}
+          aria-describedby={errorId}
         />
         <button
           type="button"
@@ -41,6 +56,7 @@ export default function PasswordField({ label, name, autoComplete }) {
           {isVisible ? <EyeOffIcon /> : <EyeIcon />}
         </button>
       </span>
+      {error && <span className="auth-field-error" id={errorId}>{error}</span>}
     </label>
   );
 }

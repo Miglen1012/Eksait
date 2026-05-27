@@ -74,8 +74,7 @@ function getRenderedImageUrl(slide, brokenImages) {
 }
 
 export default function HeroSlider() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState(DEFAULT_SLIDES);
   const [error, setError] = useState(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [brokenImages, setBrokenImages] = useState({});
@@ -84,7 +83,6 @@ export default function HeroSlider() {
     let isMounted = true;
 
     async function loadHomeBanner() {
-      setLoading(true);
       setError(null);
 
       try {
@@ -92,18 +90,14 @@ export default function HeroSlider() {
         const normalized = normalizeBannerItems(data);
 
         if (isMounted) {
-          setItems(normalized);
+          setItems(normalized.length > 0 ? normalized : DEFAULT_SLIDES);
           setActiveSlide(0);
         }
       } catch (loadError) {
         if (isMounted) {
-          setItems([]);
+          setItems(DEFAULT_SLIDES);
           setError(loadError);
           setActiveSlide(0);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
         }
       }
     }
@@ -115,20 +109,23 @@ export default function HeroSlider() {
     };
   }, []);
 
-  const slides = useMemo(() => (items.length > 1 ? items : DEFAULT_SLIDES), [items]);
+  const slides = useMemo(() => (items.length > 0 ? items : DEFAULT_SLIDES), [items]);
   const visibleSlideIndex = activeSlide % slides.length;
   const currentSlide = slides[visibleSlideIndex] || slides[0];
 
   useEffect(() => {
-    const firstSlideImage = getRenderedImageUrl(slides[0], brokenImages);
+    const nextSlide = slides[(visibleSlideIndex + 1) % slides.length];
+    const imageUrls = [
+      getRenderedImageUrl(currentSlide, brokenImages),
+      getRenderedImageUrl(nextSlide, brokenImages),
+    ].filter(Boolean);
 
-    if (!firstSlideImage) {
-      return;
-    }
-
-    const preload = new Image();
-    preload.src = firstSlideImage;
-  }, [brokenImages, slides]);
+    imageUrls.forEach((imageUrl) => {
+      const preload = new Image();
+      preload.decoding = "async";
+      preload.src = imageUrl;
+    });
+  }, [brokenImages, currentSlide, slides, visibleSlideIndex]);
 
   useEffect(() => {
     if (slides.length <= 1) {
@@ -141,30 +138,21 @@ export default function HeroSlider() {
 
     return () => window.clearInterval(timer);
   }, [slides.length]);
-
-  if (loading) {
-    return (
-      <section className="hero-slider" aria-label="Акценти">
-        <div className="hero-media">
-          <img className="hero-image is-active" src={sliderImageOne} alt="" />
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="hero-slider" aria-label="Акценти">
       <div className="hero-media">
-        {slides.map((slide, index) => (
-          <img
-            className={`hero-image ${index === visibleSlideIndex ? "is-active" : ""}`}
-            src={getRenderedImageUrl(slide, brokenImages)}
-            loading={index === 0 ? "eager" : "lazy"}
-            alt=""
-            onError={() => setBrokenImages((current) => ({ ...current, [slide.id]: true }))}
-            key={slide.id}
-          />
-        ))}
+        <img
+          className="hero-image is-active"
+          src={getRenderedImageUrl(currentSlide, brokenImages)}
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+          alt=""
+          onError={() => setBrokenImages((current) => (
+            current[currentSlide.id] ? current : { ...current, [currentSlide.id]: true }
+          ))}
+          key={currentSlide.id}
+        />
       </div>
 
       <div className="hero-slide-content">

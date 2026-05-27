@@ -3,11 +3,11 @@
 }
 
 .home-content-panel {
-  margin-top: 28px;
-  padding: clamp(18px, 3vw, 34px);
+  margin-top: 24px;
+  padding: clamp(16px, 2.6vw, 28px);
   background: #ffffff;
   border: 1px solid #d4d9e1;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.055);
 }
 
 .home-promo-images {
@@ -61,9 +61,9 @@
 }
 
 .home-categories {
-  margin-top: clamp(38px, 5vw, 68px);
+  margin-top: clamp(30px, 4vw, 54px);
   display: grid;
-  gap: clamp(32px, 4vw, 52px);
+  gap: clamp(24px, 3vw, 40px);
 }
 
 .home-category-section {
@@ -85,9 +85,9 @@
   padding-bottom: 12px;
   color: #15171c;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(23px, 1.8vw, 29px);
-  font-weight: 900;
-  line-height: 1;
+  font-size: clamp(20px, 1.55vw, 25px);
+  font-weight: 750;
+  line-height: 1.08;
   text-transform: uppercase;
   border-bottom: 2px solid #d71920;
 }
@@ -99,7 +99,7 @@
 .home-carousel-wrap {
   position: relative;
   min-width: 0;
-  padding: clamp(18px, 3vw, 42px) 0 0;
+  padding: clamp(14px, 2.4vw, 30px) 0 0;
 }
 
 .home-products-carousel {
@@ -118,11 +118,11 @@
 }
 
 .home-product-card {
-  flex: 0 0 clamp(235px, 19vw, 300px);
+  flex: 0 0 clamp(220px, 18vw, 280px);
   display: grid;
-  gap: 14px;
+  gap: 10px;
   align-content: start;
-  min-height: 285px;
+  min-height: 258px;
   padding: 0;
   background: transparent;
   border: 0;
@@ -138,7 +138,7 @@
 
 .home-product-image {
   width: 100%;
-  min-height: clamp(160px, 16vw, 220px);
+  min-height: clamp(150px, 14vw, 200px);
   position: relative;
   overflow: hidden;
   display: grid;
@@ -153,7 +153,7 @@
 
 .home-product-image img {
   width: 100%;
-  height: clamp(145px, 15vw, 205px);
+  height: clamp(136px, 13vw, 186px);
   display: block;
   object-fit: contain;
   object-position: center;
@@ -161,14 +161,14 @@
 
 .home-product-image span {
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 800;
   text-align: center;
   text-transform: uppercase;
 }
 
 .home-product-more {
   width: min(78%, 220px);
-  min-height: 44px;
+  min-height: 40px;
   position: absolute;
   left: 50%;
   bottom: 16px;
@@ -177,8 +177,8 @@
   justify-content: center;
   color: #ffffff;
   background: rgba(215, 25, 32, 0.42);
-  font-size: 15px;
-  font-weight: 900;
+  font-size: 13px;
+  font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
   opacity: 0;
@@ -206,14 +206,14 @@
 .home-product-body h3 {
   margin: 0;
   color: #080b12;
-  font-size: clamp(18px, 1.45vw, 22px);
-  font-weight: 900;
-  line-height: 1.18;
+  font-size: clamp(15px, 1.2vw, 18px);
+  font-weight: 750;
+  line-height: 1.32;
   text-transform: uppercase;
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
 }
 
 .home-product-body h3 a {
@@ -249,8 +249,8 @@
 }
 
 .home-carousel-zone button {
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

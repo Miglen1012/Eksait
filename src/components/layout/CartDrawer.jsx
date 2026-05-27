@@ -1,21 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest, getApiBaseUrl, normalizeErrors } from "../../api/client";
-import { getPrimaryImage, normalizeProducts } from "../../utils/products";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiRequest, getApiBaseUrl, getCartSessionId, normalizeErrors } from "../../api/client";
+import { fetchProducts } from "../../api/products";
+import { getCartItemsFromResponse } from "../../utils/cart";
+import { getPrimaryImage } from "../../utils/products";
 import "../../styles/layout.css";
 
-function getRawCartItems(data) {
-  return (
-    data?.items ||
-    data?.cart?.items ||
-    data?.cart_items ||
-    data?.data?.items ||
-    data?.data?.cart?.items ||
-    data?.data?.cart_items ||
-    data?.data ||
-    data ||
-    []
-  );
-}
+const cartCachePrefix = "excompany_checkout_cart";
 
 function resolveImageUrl(value) {
   const rawUrl = String(value || "").trim();
@@ -54,8 +44,7 @@ function buildProductLookup(products) {
 
 async function fetchProductLookup() {
   try {
-    const data = await apiRequest("/api/products");
-    return buildProductLookup(normalizeProducts(data));
+    return buildProductLookup(await fetchProducts());
   } catch {
     return {};
   }
@@ -77,9 +66,31 @@ function getItemImage(item, product, catalogProduct) {
   return resolveImageUrl(imageUrl);
 }
 
+function hasValue(value) {
+  return value !== null && typeof value !== "undefined" && value !== "";
+}
+
+function cartNeedsProductLookup(cartData) {
+  return getCartItemsFromResponse(cartData).some((item) => {
+    const product = item.product || item;
+    const hasName = Boolean(product.name || item.name);
+    const hasPrice = [item.price, product.price, product.unit_price].some(hasValue);
+    const hasImage = Boolean(
+      getPrimaryImage(product.images || []) ||
+      product.image ||
+      product.thumbnail ||
+      product.image_url ||
+      item.image ||
+      item.thumbnail ||
+      item.image_url
+    );
+
+    return !hasName || !hasPrice || !hasImage;
+  });
+}
+
 function normalizeDrawerItems(cartData, productLookup = {}) {
-  const rawItems = getRawCartItems(cartData);
-  const items = Array.isArray(rawItems) ? rawItems : Object.values(rawItems);
+  const items = getCartItemsFromResponse(cartData);
 
   return items.map((item) => {
     const product = item.product || item;
@@ -91,7 +102,7 @@ function normalizeDrawerItems(cartData, productLookup = {}) {
 
     return {
       id: productId,
-      variantId: item.product_variant_id || variant.id || null,
+      variantId: item.product_variant_id ?? variant.id ?? null,
       variantSize: variant.size || item.variant_size || "",
       name: product.name || item.name || catalogProduct?.name || `Продукт #${productId}`,
       image: getItemImage(item, product, catalogProduct),
@@ -109,14 +120,50 @@ function formatPrice(value) {
   }).format(Number(value || 0));
 }
 
-function responseHasCartItems(data) {
-  const rawItems = getRawCartItems(data);
-  return Array.isArray(rawItems) ? rawItems.length > 0 : Object.keys(rawItems || {}).length > 0;
+function getCartCacheKey() {
+  return `${cartCachePrefix}:${getCartSessionId()}`;
+}
+
+function readCartCache() {
+  try {
+    const rawValue = localStorage.getItem(getCartCacheKey());
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue);
+
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return {
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCartCache(items) {
+  try {
+    const existing = readCartCache() || {};
+
+    localStorage.setItem(getCartCacheKey(), JSON.stringify({
+      ...existing,
+      items: Array.isArray(items) ? items : [],
+      updatedAt: Date.now(),
+    }));
+  } catch {
+    // Ignore cache write failures and keep the live drawer state in memory.
+  }
 }
 
 export default function CartDrawer() {
   const [isOpen, setIsOpen] = useState(false);
-  const [items, setItems] = useState([]);
+  const [cachedCart] = useState(() => readCartCache());
+  const [items, setItems] = useState(() => cachedCart?.items || []);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([]);
   const productLookupRef = useRef(null);
@@ -134,20 +181,27 @@ export default function CartDrawer() {
     return productLookupRef.current;
   }, []);
 
+  const getProductLookupForCart = useCallback(async (cartData) => (
+    cartNeedsProductLookup(cartData) ? await getProductLookup() : {}
+  ), [getProductLookup]);
+
   const loadDrawerCart = useCallback(async () => {
-    setLoading(true);
     setMessages([]);
+    const hasCachedItems = items.length > 0;
+    setLoading(!hasCachedItems);
 
     try {
       const cartData = await apiRequest("/api/cart");
-      const lookup = responseHasCartItems(cartData) ? await getProductLookup() : {};
-      setItems(normalizeDrawerItems(cartData, lookup));
+      const lookup = await getProductLookupForCart(cartData);
+      const nextItems = normalizeDrawerItems(cartData, lookup);
+      setItems(nextItems);
+      writeCartCache(nextItems);
     } catch (error) {
       setMessages(normalizeErrors(error));
     } finally {
       setLoading(false);
     }
-  }, [getProductLookup]);
+  }, [getProductLookupForCart, items.length]);
 
   function navigateToCheckout() {
     setIsOpen(false);
@@ -220,7 +274,7 @@ export default function CartDrawer() {
               {items.map((item) => (
                 <article className="cart-drawer-item" key={`${item.id}:${item.variantId || ""}`}>
                   <div className="cart-drawer-thumb">
-                    {item.image ? <img src={item.image} alt="" /> : <span>{item.name.charAt(0)}</span>}
+                    {item.image ? <img src={item.image} alt="" loading="lazy" decoding="async" /> : <span>{item.name.charAt(0)}</span>}
                   </div>
                   <div>
                     <h3>{item.name}</h3>
@@ -236,7 +290,7 @@ export default function CartDrawer() {
 
         <div className="cart-drawer-footer">
           <p><span>Общо</span><strong>{formatPrice(subtotal)}</strong></p>
-          <button type="button" onClick={navigateToCheckout}>Към checkout</button>
+          <button type="button" onClick={navigateToCheckout}>Към поръчката</button>
           <button type="button" onClick={() => setIsOpen(false)}>Продължи пазаруването</button>
         </div>
       </aside>

@@ -293,7 +293,7 @@ export default function Orders() {
                       return (
                         <article className="order-item-row" key={`${order.id}-${item.id || item.product_id || index}`}>
                           <div className="order-item-thumb">
-                            {image ? <img src={image} alt="" /> : <span>{name.charAt(0)}</span>}
+                            {image ? <img src={image} alt="" loading="lazy" decoding="async" /> : <span>{name.charAt(0)}</span>}
                           </div>
                           <span>{name}</span>
                           <strong>x{quantity}</strong>

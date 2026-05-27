@@ -1,3 +1,5 @@
+import { normalizeSearchText } from "./search";
+
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -64,6 +66,44 @@ function normalizeDimensions(source = {}) {
     height: source.height ?? source.dimension_height ?? null,
     length: source.length ?? source.dimension_length ?? null,
   };
+}
+
+function getAttributeValue(source = {}, keys = []) {
+  const attributes = source.attributes || source.product_attributes || source.productAttributes;
+
+  if (!attributes) {
+    return "";
+  }
+
+  if (Array.isArray(attributes)) {
+    const match = attributes.find((attribute) => {
+      const attributeName = String(attribute?.name || attribute?.key || attribute?.label || "").trim().toLowerCase();
+      return keys.includes(attributeName);
+    });
+
+    return match?.value || match?.values?.[0] || "";
+  }
+
+  if (typeof attributes === "object") {
+    const matchingKey = Object.keys(attributes).find((key) => keys.includes(key.trim().toLowerCase()));
+    return matchingKey ? attributes[matchingKey] : "";
+  }
+
+  return "";
+}
+
+function normalizeMaterial(source = {}) {
+  const material = (
+    source.material ||
+    source.material_type ||
+    source.materialType ||
+    source.material_name ||
+    source.materialName ||
+    source.attribute_material ||
+    getAttributeValue(source, ["material", "материал", "вид материал"])
+  );
+
+  return String(material || "").trim();
 }
 
 function normalizeCategory(category) {
@@ -166,12 +206,25 @@ function normalizeVariant(variant) {
 function normalizeProduct(product, includeRelated = true) {
   const variants = Array.isArray(product.variants) ? product.variants.map(normalizeVariant) : [];
   const quantity = normalizeQuantity(product);
+  const categories = normalizeCategories(product);
+  const description = product.description || "";
+  const plainDescription = stripHtml(description);
+  const material = normalizeMaterial(product);
+  const categoryNames = categories.map((category) => category?.name).filter(Boolean).join(", ");
+  const searchText = normalizeSearchText([
+    product.name,
+    product.slug,
+    material,
+    plainDescription,
+    ...categories.map((category) => category?.name),
+  ].filter(Boolean).join(" "));
 
   return {
     id: product.id,
     name: product.name || `Продукт #${product.id}`,
     slug: product.slug || "",
-    description: product.description || "",
+    description,
+    plainDescription,
     extraInformation: product.extra_information || "",
     price: toNumber(product.sale_price ?? product.price, 0),
     regularPrice: toNumber(product.price, 0),
@@ -179,9 +232,12 @@ function normalizeProduct(product, includeRelated = true) {
     quantity,
     weight: product.weight ?? null,
     dimensions: normalizeDimensions(product),
+    material,
     variants,
     hasVariants: variants.length > 0,
-    categories: normalizeCategories(product),
+    categories,
+    categoryNames,
+    searchText,
     images: Array.isArray(product.images) ? product.images : [],
     image: product.image_url || product.primary_image_url || product.thumbnail_url || getPrimaryImage(product.images || []) || product.image || "",
     relatedProducts: includeRelated
@@ -197,7 +253,11 @@ export function normalizeProducts(data) {
       ? data.items
       : Array.isArray(data)
         ? data
-        : [];
+        : data?.id || data?.slug || data?.name
+          ? [data]
+          : data?.data?.id || data?.data?.slug || data?.data?.name
+            ? [data.data]
+            : [];
 
   return products.map((product) => normalizeProduct(product));
 }

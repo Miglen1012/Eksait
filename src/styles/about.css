@@ -89,7 +89,7 @@
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
   gap: 22px;
   margin-top: 22px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .about-text,
@@ -101,6 +101,12 @@
 .about-text {
   display: grid;
   gap: 14px;
+  height: 100%;
+  align-content: start;
+}
+
+.industries-panel {
+  height: 100%;
 }
 
 .about-text .page-kicker {

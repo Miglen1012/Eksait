@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import HeroSlider from "../components/home/HeroSlider";
 import { normalizeErrors } from "../api/client";
 import { fetchProducts, getCachedProducts } from "../api/products";
 import logo from "../assets/logo-widget.png";
 import promoImageMerged from "../assets/pics/Untitled-3.jpg";
+import { normalizeSearchText } from "../utils/search";
 import "../styles/home.css";
 
 const HOME_CATEGORY_SECTIONS = [
   { slug: "frezi", title: "Фрези", limit: 8, categoryNames: ["Фрези"] },
   { slug: "plastini", title: "Пластини", limit: 8, categoryNames: ["Пластини"] },
-  { slug: "shtangi", title: "Райбери / Зенкери", limit: 8, categoryNames: ["Щанги", "Райбери / Зенкери"] },
+  { slug: "metchici", title: "Метчици", limit: 8, categoryNames: ["Метчици"] },
 ];
 
 function getProductPath(product) {
@@ -17,9 +18,28 @@ function getProductPath(product) {
 }
 
 function productBelongsToSection(product, section) {
-  return product.categories.some((category) => (
-    category.slug === section.slug || section.categoryNames.includes(category.name)
-  ));
+  const sectionTokens = [section.slug, section.title, ...(section.categoryNames || [])]
+    .map((token) => normalizeSearchText(token))
+    .filter(Boolean);
+
+  return (product.categories || []).some((category) => {
+    const categoryTokens = [
+      category?.name,
+      category?.slug,
+      category?.label,
+      category?.title,
+    ]
+      .map((token) => normalizeSearchText(token))
+      .filter(Boolean);
+
+    return categoryTokens.some((categoryToken) => (
+      sectionTokens.some((sectionToken) => (
+        categoryToken === sectionToken ||
+        categoryToken.includes(sectionToken) ||
+        sectionToken.includes(categoryToken)
+      ))
+    ));
+  });
 }
 
 function HomeCategorySection({ section, products }) {
@@ -184,3 +204,4 @@ export default function HomePage() {
     </main>
   );
 }
+

@@ -328,20 +328,7 @@ export default function ProductShow({ productKey }) {
 
   return (
     <main className="product-show-page">
-      {successMessage && (
-        <div className="page-toast" role="status" aria-live="polite">
-          {successMessage}
-        </div>
-      )}
       <section className="product-show-shell">
-        {messages.length > 0 && (
-          <div className="product-show-alert">
-            {messages.map((message) => (
-              <p key={message}>{message}</p>
-            ))}
-          </div>
-        )}
-
         <div className="product-show-grid">
           <div className="product-show-gallery">
             <div className="product-show-image-wrap">
@@ -468,6 +455,20 @@ export default function ProductShow({ productKey }) {
                         ? "Добави в количката"
                         : "Няма цена"}
               </button>
+
+              {(successMessage || messages.length > 0) && (
+                <div
+                  className={successMessage ? "product-show-buy-notice is-success" : "product-show-buy-notice"}
+                  role={successMessage ? "status" : "alert"}
+                  aria-live="polite"
+                >
+                  {successMessage ? (
+                    <p>{successMessage}</p>
+                  ) : (
+                    messages.map((message) => <p key={message}>{message}</p>)
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

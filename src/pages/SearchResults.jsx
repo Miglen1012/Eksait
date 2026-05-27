@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiRequest, normalizeErrors } from "../api/client";
-import { fetchProducts, getCachedProducts } from "../api/products";
+import { normalizeErrors } from "../api/client";
+import { getCachedProducts, searchProducts } from "../api/products";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
 import { DEFAULT_PRODUCT_PAGE_SIZE, getPageSizeFromSearch } from "../utils/pagination";
-import { formatPrice, normalizeProducts, stripHtml } from "../utils/products";
+import { formatPrice, stripHtml } from "../utils/products";
 import { getProductUrl, normalizeSearchText } from "../utils/search";
 import "../styles/products.css";
 
@@ -51,19 +51,8 @@ export default function SearchResults() {
 
     const normalizedQuery = normalizeSearchText(searchQuery);
     const searchLimit = Math.max(48, productsPerPage * 6);
-
-    try {
-      const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(searchQuery)}&limit=${searchLimit}`);
-      setProducts(normalizeProducts(data));
-      return;
-    } catch (error) {
-      if (error?.status !== 404) {
-        throw error;
-      }
-    }
-
-    const allProducts = await fetchProducts();
-    setProducts(allProducts.filter((product) => getProductSearchText(product).includes(normalizedQuery)));
+    const nextProducts = await searchProducts(searchQuery, { limit: searchLimit });
+    setProducts(nextProducts.filter((product) => getProductSearchText(product).includes(normalizedQuery)));
   }, [productsPerPage, query]);
 
   useEffect(() => {

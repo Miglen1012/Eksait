@@ -15,6 +15,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Login() {
   const [messages, setMessages] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [retryIn, setRetryIn] = useState(0);
 
@@ -39,6 +40,7 @@ export default function Login() {
 
     setSubmitting(true);
     setMessages([]);
+    setFieldErrors({});
 
     const formData = new FormData(event.currentTarget);
     const payload = {
@@ -49,19 +51,24 @@ export default function Login() {
     };
 
     const validationErrors = [];
+    const nextFieldErrors = {};
 
     if (!payload.email) {
       validationErrors.push("Въведете имейл адрес.");
+      nextFieldErrors.email = "Въведете имейл адрес.";
     } else if (!EMAIL_PATTERN.test(payload.email)) {
       validationErrors.push("Въведете валиден имейл адрес.");
+      nextFieldErrors.email = "Въведете валиден имейл адрес.";
     }
 
     if (!payload.password) {
       validationErrors.push("Въведете парола.");
+      nextFieldErrors.password = "Въведете парола.";
     }
 
     if (validationErrors.length > 0) {
       setMessages(validationErrors);
+      setFieldErrors(nextFieldErrors);
       setSubmitting(false);
       return;
     }
@@ -83,11 +90,21 @@ export default function Login() {
       handleApiErrorByStatus(error, {
         fallbackRetryAfterSeconds: LOGIN_LOCK_SECONDS,
         on401: () => {
-          setMessages(["Невалидни данни."]);
+          setFieldErrors({
+            email: "Невалиден имейл или парола.",
+            password: "Невалиден имейл или парола.",
+          });
+          setMessages([]);
         },
         on422: () => {
           const fieldErrors = getFieldErrors(error, ["email", "password"]);
-          setMessages(fieldErrors.length > 0 ? fieldErrors : ["Моля, проверете въведените данни."]);
+          const nextErrors = {
+            email: error?.errors?.email?.[0] || "",
+            password: error?.errors?.password?.[0] || "",
+          };
+
+          setFieldErrors(nextErrors);
+          setMessages(fieldErrors.length > 0 ? [] : ["Моля, проверете въведените данни."]);
         },
         on429: (_, retryAfter) => {
           setRetryIn(retryAfter);
@@ -116,6 +133,35 @@ export default function Login() {
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <h2>Вход в профила</h2>
 
+          <label>
+            Имейл
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              aria-invalid={fieldErrors.email ? "true" : undefined}
+              aria-describedby={fieldErrors.email ? "login-email-error" : undefined}
+              onChange={() => {
+                if (fieldErrors.email) {
+                  setFieldErrors((current) => ({ ...current, email: "" }));
+                }
+              }}
+            />
+            {fieldErrors.email && <span className="auth-field-error" id="login-email-error">{fieldErrors.email}</span>}
+          </label>
+
+          <PasswordField
+            label="Парола"
+            name="password"
+            autoComplete="current-password"
+            error={fieldErrors.password}
+            onChange={() => {
+              if (fieldErrors.password) {
+                setFieldErrors((current) => ({ ...current, password: "" }));
+              }
+            }}
+          />
+
           {messages.length > 0 && (
             <div className="auth-alert">
               {messages.map((message) => (
@@ -129,13 +175,6 @@ export default function Login() {
               <p>Опитай отново след {retryIn} сек.</p>
             </div>
           )}
-
-          <label>
-            Имейл
-            <input type="email" name="email" autoComplete="email" />
-          </label>
-
-          <PasswordField label="Парола" name="password" autoComplete="current-password" />
 
           <div className="auth-row">
             <label className="auth-check">

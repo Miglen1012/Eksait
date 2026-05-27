@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { normalizeErrors } from "../api/client";
 import { fetchEquipmentProducts } from "../api/equipment";
+import { searchProducts } from "../api/products";
 import CustomSelect from "../components/form/CustomSelect";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
 import { DEFAULT_PRODUCT_PAGE_SIZE } from "../utils/pagination";
@@ -33,16 +34,6 @@ function getProductPrice(product) {
 
   const price = Number(product.price);
   return Number.isFinite(price) ? price : 0;
-}
-
-function getProductSearchText(product) {
-  return normalizeSearchText([
-    product.name,
-    product.slug,
-    product.material,
-    stripHtml(product.description),
-    ...product.categories.map((category) => category.name),
-  ].filter(Boolean).join(" "));
 }
 
 function getPriceBounds(products) {
@@ -378,6 +369,8 @@ export default function Equipment() {
   const [currentPage, setCurrentPage] = useState(1);
   const [productsPerPage, setProductsPerPage] = useState(DEFAULT_PRODUCT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
@@ -410,20 +403,57 @@ export default function Equipment() {
     };
   }, []);
 
+  useEffect(() => {
+    const trimmedSearch = filters.search.trim();
+
+    if (!trimmedSearch) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setSearchLoading(true);
+
+    async function loadSearchResults() {
+      try {
+        const nextSearchResults = await searchProducts(trimmedSearch, { limit: Math.max(96, productsPerPage * 4) });
+
+        if (!isCancelled) {
+          setSearchResults(nextSearchResults);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setMessages(normalizeErrors(error));
+          setSearchResults([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setSearchLoading(false);
+        }
+      }
+    }
+
+    loadSearchResults();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [filters.search, productsPerPage]);
+
   const priceBounds = useMemo(() => getPriceBounds(products), [products]);
 
   const filteredProducts = useMemo(() => {
-    const normalizedSearch = normalizeSearchText(filters.search);
     const minPrice = filters.minPrice === "" ? null : Number(filters.minPrice);
     const maxPrice = filters.maxPrice === "" ? null : Number(filters.maxPrice);
+    const searchScopedProducts = filters.search ? (searchResults || []) : products;
 
-    const nextProducts = products.filter((product) => {
+    const nextProducts = searchScopedProducts.filter((product) => {
       const price = getProductPrice(product);
-      const matchesSearch = normalizedSearch ? getProductSearchText(product).includes(normalizedSearch) : true;
       const matchesMinPrice = minPrice === null || !Number.isFinite(minPrice) || price >= minPrice;
       const matchesMaxPrice = maxPrice === null || !Number.isFinite(maxPrice) || price <= maxPrice;
 
-      return matchesSearch && matchesMinPrice && matchesMaxPrice;
+      return matchesMinPrice && matchesMaxPrice;
     });
 
     return [...nextProducts].sort((firstProduct, secondProduct) => {
@@ -441,7 +471,7 @@ export default function Equipment() {
 
       return 0;
     });
-  }, [filters, products, sortMode]);
+  }, [filters, products, searchResults, sortMode]);
 
   const totalProductsCount = filteredProducts.length;
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / productsPerPage));
@@ -499,7 +529,7 @@ export default function Equipment() {
             </div>
           )}
 
-          {loading ? (
+          {loading || searchLoading ? (
             <div className="products-empty">Зареждане...</div>
           ) : totalProductsCount === 0 ? (
             <div className="products-empty equipment-empty">

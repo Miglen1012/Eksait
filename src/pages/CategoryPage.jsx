@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { normalizeErrors } from "../api/client";
-import { fetchProducts, getCachedProducts } from "../api/products";
+import { fetchProducts, getCachedProducts, searchProducts } from "../api/products";
 import CustomSelect from "../components/form/CustomSelect";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
 import { categories, getCategoryByName, getCategoryBySlug } from "../data/categories";
@@ -56,20 +56,6 @@ function getProductSortPrice(product) {
 
   const price = Number(product.price);
   return Number.isFinite(price) ? price : 0;
-}
-
-function getProductSearchText(product) {
-  if (product?.searchText) {
-    return String(product.searchText);
-  }
-
-  return normalizeSearchText([
-    product?.name,
-    product?.slug,
-    product?.material,
-    stripHtml(product?.description),
-    ...(product?.categories || []).map((category) => category?.name),
-  ].filter(Boolean).join(" "));
 }
 
 function getProductCategoryTokens(product) {
@@ -624,6 +610,8 @@ export default function CategoryPage({ slug }) {
   const [products, setProducts] = useState(() => getCachedProducts() || []);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [sortMode, setSortMode] = useState("default");
   const [productsPerPage, setProductsPerPage] = useState(getPageSizeFromSearch);
   const [filters, setFilters] = useState({
@@ -642,18 +630,14 @@ export default function CategoryPage({ slug }) {
   }
 
   const baseFilteredProducts = useMemo(() => {
-    const normalizedSearchTerm = normalizeSearchText(searchTerm);
+    const searchScopedProducts = searchTerm ? (searchResults || []) : products;
 
-    return products.filter((product) => {
+    return searchScopedProducts.filter((product) => {
       const matchesToolsParentCategory = productMatchesToolsParentCategory(product);
       const matchesCategory = productMatchesCategory(product, selectedCategory);
-      const matchesSearch = normalizedSearchTerm
-        ? getProductSearchText(product).includes(normalizedSearchTerm)
-        : true;
-
-      return matchesToolsParentCategory && matchesCategory && matchesSearch;
+      return matchesToolsParentCategory && matchesCategory;
     });
-  }, [products, searchTerm, selectedCategory]);
+  }, [products, searchResults, searchTerm, selectedCategory]);
 
   const priceBounds = useMemo(
     () => getPriceBounds(baseFilteredProducts),
@@ -770,6 +754,44 @@ export default function CategoryPage({ slug }) {
     loadProducts();
   }, []);
 
+  useEffect(() => {
+    const trimmedSearchTerm = searchTerm.trim();
+
+    if (!trimmedSearchTerm) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setSearchLoading(true);
+
+    async function loadSearchResults() {
+      try {
+        const nextSearchResults = await searchProducts(trimmedSearchTerm, { limit: Math.max(96, productsPerPage * 4) });
+
+        if (!isCancelled) {
+          setSearchResults(nextSearchResults);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setMessages(normalizeErrors(error));
+          setSearchResults([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setSearchLoading(false);
+        }
+      }
+    }
+
+    loadSearchResults();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [productsPerPage, searchTerm]);
+
   function handleProductsPerPageChange(value) {
     setProductsPerPage(value);
     setCurrentPage(1);
@@ -837,7 +859,7 @@ export default function CategoryPage({ slug }) {
               </div>
             )}
 
-            {loading ? (
+            {loading || searchLoading ? (
               <div className="products-empty">Зареждане...</div>
             ) : totalProductsCount === 0 ? (
               <div className="products-empty">Няма намерени продукти в тази категория.</div>

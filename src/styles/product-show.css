@@ -266,6 +266,29 @@
   border-top: 1px solid #e5e7eb;
 }
 
+.product-show-buy-notice {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 12px 14px;
+  color: #991b1b;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+}
+
+.product-show-buy-notice.is-success {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.product-show-buy-notice p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .product-show-buy strong {
   order: 1;
   grid-column: 1 / -1;

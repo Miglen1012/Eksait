@@ -1,10 +1,10 @@
 ﻿import { useEffect, useState } from "react";
 import { apiRequest, clearAuthToken, getAuthToken } from "../../api/client";
 import { fetchEquipmentProducts } from "../../api/equipment";
-import { fetchProducts } from "../../api/products";
+import { searchProducts } from "../../api/products";
 import { getCartItemCount } from "../../utils/cart";
-import { normalizeProducts } from "../../utils/products";
-import { getProductUrl, productMatchesSearch } from "../../utils/search";
+import { formatPrice } from "../../utils/products";
+import { getProductUrl } from "../../utils/search";
 import logo from "../../assets/es-logo1.png";
 import "../../styles/layout.css";
 
@@ -34,10 +34,11 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hasEquipmentProducts, setHasEquipmentProducts] = useState(null);
   const trimmedSearchQuery = searchQuery.trim();
-  const visibleSearchSuggestions = isSearchFocused && trimmedSearchQuery.length >= 2 ? searchSuggestions : [];
+  const shouldShowSearchSuggestions = isSearchFocused && trimmedSearchQuery.length >= 2;
 
   useEffect(() => {
     let isMounted = true;
@@ -103,33 +104,26 @@ export default function Header() {
   }, []);
 
   useEffect(() => {
-    if (!isSearchFocused || trimmedSearchQuery.length < 2) {
+    if (!shouldShowSearchSuggestions) {
+      setIsSearching(false);
+      setSearchSuggestions([]);
       return undefined;
     }
 
     let isCancelled = false;
+    setIsSearching(true);
     const timer = window.setTimeout(async () => {
       try {
-        let suggestions = [];
-
-        try {
-          const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(trimmedSearchQuery)}&limit=6`);
-          suggestions = normalizeProducts(data);
-        } catch (error) {
-          if (error?.status !== 404) {
-            throw error;
-          }
-
-          const products = await fetchProducts();
-          suggestions = products.filter((product) => productMatchesSearch(product, trimmedSearchQuery)).slice(0, 6);
-        }
-
         if (!isCancelled) {
-          setSearchSuggestions(suggestions);
+          setSearchSuggestions(await searchProducts(trimmedSearchQuery, { limit: 6 }));
         }
       } catch {
         if (!isCancelled) {
           setSearchSuggestions([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsSearching(false);
         }
       }
     }, 250);
@@ -256,14 +250,30 @@ export default function Header() {
                   </svg>
                 </button>
 
-                {visibleSearchSuggestions.length > 0 && (
+                {shouldShowSearchSuggestions && (
                   <div className="search-suggestions">
-                    {visibleSearchSuggestions.map((product) => (
-                      <button type="button" onMouseDown={() => openProduct(product)} key={product.id}>
-                        {product.image && <img src={product.image} alt="" loading="lazy" decoding="async" />}
-                        <span>{product.name}</span>
-                      </button>
-                    ))}
+                    {isSearching ? (
+                      <p className="search-suggestions-empty">Търсене...</p>
+                    ) : searchSuggestions.length > 0 ? (
+                      searchSuggestions.map((product) => (
+                        <button type="button" className="search-suggestion-item" onMouseDown={() => openProduct(product)} key={product.id}>
+                          <span className="search-suggestion-thumb">
+                            {product.image ? (
+                              <img src={product.image} alt="" loading="lazy" decoding="async" />
+                            ) : (
+                              <span>{product.name?.charAt(0)?.toUpperCase() || "П"}</span>
+                            )}
+                          </span>
+                          <span className="search-suggestion-content">
+                            <span className="search-suggestion-name">{product.name}</span>
+                            <span className="search-suggestion-meta">{product.categoryNames || "Продукт"}</span>
+                          </span>
+                          <strong className="search-suggestion-price">{formatPrice(product.price)}</strong>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="search-suggestions-empty">Няма резултати.</p>
+                    )}
                   </div>
                 )}
               </form>

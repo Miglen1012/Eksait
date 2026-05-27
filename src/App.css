@@ -127,10 +127,9 @@ button { font: inherit; cursor: pointer; }
 
 .page-toast {
   width: min(560px, calc(100% - 24px));
-  position: fixed;
-  top: 96px;
-  left: 50%;
+  position: relative;
   z-index: 210;
+  margin: 0 auto 18px;
   color: #141823;
   background: linear-gradient(135deg, #ffffff 0%, #f6f8fb 100%);
   border: 1px solid #d5dce6;
@@ -141,12 +140,10 @@ button { font: inherit; cursor: pointer; }
   font-weight: 700;
   line-height: 1.45;
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
-  transform: translateX(-50%);
 }
 
 @media (max-width: 760px) {
   .page-toast {
-    top: 84px;
     font-size: 13px;
   }
 }

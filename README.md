@@ -25,6 +25,7 @@ The most useful views for this project are:
 - `docs/screenshots/order-success.png` - centered success state after checkout
 - `docs/screenshots/login.png` - login page
 - `docs/screenshots/register.png` - register page
+- `docs/screenshots/orders.png` - logged-in customer orders page with status
 
 If you add these files to the repository, they can be embedded here directly.
 

@@ -19,6 +19,7 @@ import CategoryPage from "./pages/CategoryPage";
 import ProductShow from "./pages/ProductShow";
 import SearchResults from "./pages/SearchResults";
 import Equipment from "./pages/Equipment";
+import { isAuthRoute, storeAuthReturnPath } from "./utils/authRedirect";
 
 function getCurrentPage(path) {
   if (path === "/about") {
@@ -155,6 +156,10 @@ export default function App() {
 
       if (url.origin !== window.location.origin || !url.pathname.startsWith("/")) {
         return;
+      }
+
+      if (isAuthRoute(url.pathname)) {
+        storeAuthReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
       }
 
       event.preventDefault();

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { apiRequest, getCartSessionId, getFieldErrors, getTokenFromResponse, handleApiErrorByStatus, normalizeErrors, setAuthToken } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
+import { consumeAuthReturnPath } from "../utils/authRedirect";
 import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/auth.css";
 
@@ -86,7 +87,7 @@ export default function Register() {
         setAuthToken(token);
       }
 
-      window.location.href = "/cart";
+      window.location.href = consumeAuthReturnPath("/");
     } catch (error) {
       handleApiErrorByStatus(error, {
         on422: () => {

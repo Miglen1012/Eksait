@@ -8,6 +8,7 @@ import {
   setAuthToken,
 } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
+import { consumeAuthReturnPath } from "../utils/authRedirect";
 import "../styles/auth.css";
 
 const LOGIN_LOCK_SECONDS = 60;
@@ -85,7 +86,7 @@ export default function Login() {
       }
 
       await apiRequest("/api/me");
-      window.location.href = "/cart";
+      window.location.href = consumeAuthReturnPath("/");
     } catch (error) {
       handleApiErrorByStatus(error, {
         fallbackRetryAfterSeconds: LOGIN_LOCK_SECONDS,

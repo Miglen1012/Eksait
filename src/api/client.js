@@ -1,3 +1,5 @@
+import { storeAuthReturnPath } from "../utils/authRedirect";
+
 const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000")
   .split(",")[0]
   .trim()
@@ -71,6 +73,7 @@ function handleUnauthorizedResponse() {
     return;
   }
 
+  storeAuthReturnPath();
   clearAuthToken();
 
   if (window.location.pathname !== "/login") {

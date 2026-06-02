@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { apiRequest, clearAuthToken, getAuthToken } from "../../api/client";
-import { fetchEquipmentProducts, getCachedEquipmentProducts } from "../../api/equipment";
+import { fetchEquipmentProducts } from "../../api/equipment";
 import { searchProducts } from "../../api/products";
 import { getCartItemCount } from "../../utils/cart";
 import { formatPrice } from "../../utils/products";
@@ -36,9 +36,7 @@ export default function Header() {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [hasEquipmentProducts, setHasEquipmentProducts] = useState(() => (
-    (getCachedEquipmentProducts() || []).length > 0
-  ));
+  const [hasEquipmentProducts, setHasEquipmentProducts] = useState(false);
   const trimmedSearchQuery = searchQuery.trim();
   const shouldShowSearchSuggestions = isSearchFocused && trimmedSearchQuery.length >= 2;
 
@@ -78,7 +76,7 @@ export default function Header() {
 
     async function loadEquipmentAvailability() {
       try {
-        const equipmentProducts = await fetchEquipmentProducts();
+        const equipmentProducts = await fetchEquipmentProducts({ force: true });
         if (isMounted) {
           setHasEquipmentProducts(equipmentProducts.length > 0);
         }

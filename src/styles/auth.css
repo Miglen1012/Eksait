@@ -1,6 +1,10 @@
 .auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
   z-index: 1;
+  min-height: 100%;
   padding: clamp(24px, 3.5vw, 40px) 0 64px;
 }
 

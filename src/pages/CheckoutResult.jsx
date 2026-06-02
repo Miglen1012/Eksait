@@ -6,7 +6,7 @@ export default function CheckoutResult({ type }) {
   const isSuccess = type === "success";
 
   return (
-    <main className="cart-page">
+    <main className="cart-page cart-page--result">
       <section className="cart-shell">
         <div className="cart-result">
           <span className="cart-kicker">{isSuccess ? "Поръчката е приета" : "Плащането е прекъснато"}</span>

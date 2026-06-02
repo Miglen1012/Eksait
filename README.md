@@ -1,86 +1,114 @@
 # EXCompany Frontend
 
-React/Vite frontend за сайта на Excite Company.
+React/Vite frontend for the Excite Company storefront.
 
-## Изисквания
+## Overview
 
-- Node.js 20 или по-нова версия
+The application includes:
+
+- home page with hero banners and category sections
+- product catalog with filters, sorting, and pagination
+- product details with variants and availability
+- guest cart and checkout flow
+- login, register, forgot password, and reset password pages
+- contact and company information pages
+
+## Suggested Screenshots
+
+The README is prepared for product screenshots under `docs/screenshots/`.
+The most useful views for this project are:
+
+- `docs/screenshots/products-grid.png` - main catalog page with product cards
+- `docs/screenshots/products-filters.png` - catalog with filters panel open
+- `docs/screenshots/product-details.png` - product details page with variants table
+- `docs/screenshots/checkout.png` - checkout form with cart summary
+- `docs/screenshots/order-success.png` - centered success state after checkout
+- `docs/screenshots/login.png` - login page
+- `docs/screenshots/register.png` - register page
+
+If you add these files to the repository, they can be embedded here directly.
+
+## Requirements
+
+- Node.js 20 or newer
 - npm
-- Работещ backend API
+- running backend API
 
-## Инсталация
+## Installation
 
 ```bash
 npm install
 ```
 
-## Environment настройки
+## Environment
 
-Копирайте примерния env файл:
+Create a local `.env` file from the example:
 
 ```bash
 cp .env.example .env
 ```
 
-На Windows PowerShell:
+PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Настройте адреса на backend API в `.env`:
+Set the backend base URL:
 
 ```env
 VITE_API_URL=http://localhost:8000
 ```
 
-Ако backend-ът е на друг адрес, сменете стойността на `VITE_API_URL`.
+## Development
 
-## Стартиране за разработка
+Start the local dev server:
 
 ```bash
 npm run dev
 ```
 
-Vite ще покаже локален адрес, обикновено:
+Vite usually serves the app at:
 
 ```text
 http://localhost:5173
 ```
 
-## Production build
+## Production Build
+
+Create a production build:
 
 ```bash
 npm run build
 ```
 
-Готовите файлове се генерират в `dist/`.
+The generated files are written to `dist/`.
 
-## Преглед на production build
+Preview the production build locally:
 
 ```bash
 npm run preview
 ```
 
-## Полезни команди
+## Useful Commands
 
 ```bash
 npm run lint
 npm run build
 ```
 
-## Cart session
+## Cart Session
 
-Frontend-ът пази guest cart session в `localStorage` под ключ:
+The frontend stores the guest cart session in `localStorage` under:
 
 ```text
 cart_session_id
 ```
 
-Този session id се изпраща автоматично към API заявките като header:
+That value is sent automatically with API requests through:
 
 ```text
 X-Cart-Session-Id
 ```
 
-Същият session id се използва и при guest cart, checkout, login и register flow.
+The same session id is also used during guest cart, checkout, login, and register flows.

@@ -84,6 +84,8 @@ h6 {
 
 .site-shell {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   position: relative;
   isolation: isolate;
   overflow-x: hidden;
@@ -93,6 +95,10 @@ h6 {
   background-repeat: no-repeat;
   background-size: 44px 44px;
   background-position: center top;
+}
+
+.site-shell > main {
+  flex: 1 0 auto;
 }
 
 .site-shell::before {

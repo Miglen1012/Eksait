@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { apiRequest, clearAuthToken, getAuthToken } from "../../api/client";
-import { fetchEquipmentProducts } from "../../api/equipment";
+import { fetchEquipmentProducts, getCachedEquipmentProducts } from "../../api/equipment";
 import { searchProducts } from "../../api/products";
 import { getCartItemCount } from "../../utils/cart";
 import { formatPrice } from "../../utils/products";
@@ -36,7 +36,9 @@ export default function Header() {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [hasEquipmentProducts, setHasEquipmentProducts] = useState(null);
+  const [hasEquipmentProducts, setHasEquipmentProducts] = useState(() => (
+    (getCachedEquipmentProducts() || []).length > 0
+  ));
   const trimmedSearchQuery = searchQuery.trim();
   const shouldShowSearchSuggestions = isSearchFocused && trimmedSearchQuery.length >= 2;
 
@@ -82,7 +84,7 @@ export default function Header() {
         }
       } catch {
         if (isMounted) {
-          setHasEquipmentProducts(null);
+          setHasEquipmentProducts(false);
         }
       }
     }
@@ -197,9 +199,9 @@ export default function Header() {
   }
 
   const userName = getUserName(user);
-  const visibleNavItems = hasEquipmentProducts === false
-    ? navItems.filter((item) => item.key !== "equipment")
-    : navItems;
+  const visibleNavItems = hasEquipmentProducts
+    ? navItems
+    : navItems.filter((item) => item.key !== "equipment");
 
   return (
     <header className="site-header">

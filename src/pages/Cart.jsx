@@ -34,6 +34,7 @@ const fallbackPaymentMethods = [
 ];
 const cardPaymentMethodLabel = "Плащане с карта";
 const cartCachePrefix = "excompany_checkout_cart";
+const REMOVE_CONFIRM_DELAY_MS = 4000;
 
 function resolveImageUrl(value) {
   const rawUrl = String(value || "").trim();
@@ -770,6 +771,8 @@ export default function Cart() {
   const [user, setUser] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState(() => cachedCart?.paymentMethods || []);
   const productLookupRef = useRef(null);
+  const removeTimersRef = useRef({});
+  const [pendingRemovals, setPendingRemovals] = useState({});
 
   const activeShippingMethod = checkout.shipping_method === "apm" ? "office" : checkout.shipping_method;
   const isOfficeDelivery = activeShippingMethod === "office";
@@ -805,6 +808,35 @@ export default function Cart() {
     })),
     [items],
   );
+
+  useEffect(() => (
+    () => {
+      Object.values(removeTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      removeTimersRef.current = {};
+    }
+  ), []);
+
+  useEffect(() => {
+    const activeKeys = new Set(items.map((item) => getCartLineKey(item.id, item.variantId)));
+    const staleKeys = Object.keys(removeTimersRef.current).filter((key) => !activeKeys.has(key));
+
+    if (staleKeys.length === 0) {
+      return;
+    }
+
+    staleKeys.forEach((key) => {
+      window.clearTimeout(removeTimersRef.current[key]);
+      delete removeTimersRef.current[key];
+    });
+
+    setPendingRemovals((current) => {
+      const nextPendingRemovals = { ...current };
+      staleKeys.forEach((key) => {
+        delete nextPendingRemovals[key];
+      });
+      return nextPendingRemovals;
+    });
+  }, [items]);
 
   const filteredOffices = useMemo(() => {
     const apsOffices = offices.filter((office) => office.is_aps === true);
@@ -1143,6 +1175,8 @@ export default function Cart() {
   }
 
   async function updateQuantity(productId, quantity, variantId = null) {
+    clearPendingRemoval(getCartLineKey(productId, variantId));
+
     const cartItem = items.find((item) => item.id === productId && String(item.variantId || "") === String(variantId || ""));
     const requestedQuantity = Math.max(1, Number(quantity) || 1);
     const availableQuantity = getAvailableQuantity(cartItem);
@@ -1200,10 +1234,8 @@ export default function Cart() {
   }
 
   async function performRemoveItem(productId, variantId = null) {
-    const previousItems = items;
     setSavingProductId(productId);
     setMessages([]);
-    setItems((currentItems) => currentItems.filter((item) => !(item.id === productId && String(item.variantId || "") === String(variantId || ""))));
 
     try {
       const query = hasVariantId(variantId) ? `?product_variant_id=${encodeURIComponent(variantId)}` : "";
@@ -1221,7 +1253,6 @@ export default function Cart() {
       window.dispatchEvent(new Event("cart:changed"));
     } catch (error) {
       setMessages(normalizeErrors(error));
-      setItems(previousItems);
       try {
         await syncCartItems();
       } catch {
@@ -1236,8 +1267,59 @@ export default function Cart() {
     return `${productId}:${variantId || ""}`;
   }
 
+  function clearPendingRemoval(key) {
+    if (removeTimersRef.current[key]) {
+      window.clearTimeout(removeTimersRef.current[key]);
+      delete removeTimersRef.current[key];
+    }
+
+    setPendingRemovals((current) => {
+      if (!current[key]) {
+        return current;
+      }
+
+      const nextPendingRemovals = { ...current };
+      delete nextPendingRemovals[key];
+      return nextPendingRemovals;
+    });
+  }
+
+  function clearAllPendingRemovals() {
+    Object.values(removeTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+    removeTimersRef.current = {};
+    setPendingRemovals({});
+  }
+
+  function scheduleRemoveItem(productId, variantId = null) {
+    const key = getCartLineKey(productId, variantId);
+
+    if (removeTimersRef.current[key]) {
+      return;
+    }
+
+    setMessages([]);
+    setPendingRemovals((current) => ({
+      ...current,
+      [key]: true,
+    }));
+
+    removeTimersRef.current[key] = window.setTimeout(() => {
+      delete removeTimersRef.current[key];
+      setPendingRemovals((current) => {
+        if (!current[key]) {
+          return current;
+        }
+
+        const nextPendingRemovals = { ...current };
+        delete nextPendingRemovals[key];
+        return nextPendingRemovals;
+      });
+      performRemoveItem(productId, variantId);
+    }, REMOVE_CONFIRM_DELAY_MS);
+  }
+
   function removeItem(productId, variantId = null) {
-    performRemoveItem(productId, variantId);
+    scheduleRemoveItem(productId, variantId);
   }
 
   function buildCheckoutPayload() {
@@ -1339,6 +1421,7 @@ export default function Cart() {
 
   async function submitCheckout(event) {
     event.preventDefault();
+    clearAllPendingRemovals();
     setSubmitting(true);
     setMessages([]);
 
@@ -1463,7 +1546,7 @@ export default function Cart() {
                       type="button"
                       className="cart-remove-button"
                       onClick={() => removeItem(item.id, item.variantId)}
-                      disabled={savingProductId === item.id}
+                      disabled={savingProductId === item.id || Boolean(pendingRemovals[getCartLineKey(item.id, item.variantId)])}
                       aria-label={`Премахни ${item.name} от количката`}
                       title="Премахни продукта"
                     >
@@ -1475,6 +1558,21 @@ export default function Cart() {
                         <path d="M9 7V4h6v3" />
                       </svg>
                     </button>
+
+                    {pendingRemovals[getCartLineKey(item.id, item.variantId)] && (
+                      <div className="cart-remove-confirm" role="status" aria-live="polite">
+                        <div>
+                          <p>Сигурни ли сте, че искате да премахнете продукта от количката?</p>
+                          <span className="cart-remove-timer" aria-hidden="true" />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => clearPendingRemoval(getCartLineKey(item.id, item.variantId))}
+                        >
+                          Отмяна
+                        </button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -1516,6 +1614,10 @@ export default function Cart() {
                   />
                 </label>
                 <label>
+                  Град
+                  <input name="shipping_city" value={checkout.shipping_city} onChange={updateCheckoutField} />
+                </label>
+                <label>
                   Метод на доставка
                   <CustomSelect
                     name="shipping_method"
@@ -1523,10 +1625,6 @@ export default function Cart() {
                     onChange={updateCheckoutField}
                     options={shippingMethodOptions}
                   />
-                </label>
-                <label>
-                  Град
-                  <input name="shipping_city" value={checkout.shipping_city} onChange={updateCheckoutField} />
                 </label>
 
                 {activeShippingMethod === "address" && (

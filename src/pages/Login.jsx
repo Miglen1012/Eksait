@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import {
   apiRequest,
   getCartSessionId,
-  getFieldErrors,
   getTokenFromResponse,
   handleApiErrorByStatus,
+  normalizeErrors,
   setAuthToken,
 } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
@@ -90,21 +90,12 @@ export default function Login() {
       handleApiErrorByStatus(error, {
         fallbackRetryAfterSeconds: LOGIN_LOCK_SECONDS,
         on401: () => {
-          setFieldErrors({
-            email: "Невалиден имейл или парола.",
-            password: "Невалиден имейл или парола.",
-          });
-          setMessages([]);
+          setFieldErrors({});
+          setMessages(normalizeErrors(error));
         },
         on422: () => {
-          const fieldErrors = getFieldErrors(error, ["email", "password"]);
-          const nextErrors = {
-            email: error?.errors?.email?.[0] || "",
-            password: error?.errors?.password?.[0] || "",
-          };
-
-          setFieldErrors(nextErrors);
-          setMessages(fieldErrors.length > 0 ? [] : ["Моля, проверете въведените данни."]);
+          setFieldErrors({});
+          setMessages(normalizeErrors(error));
         },
         on429: (_, retryAfter) => {
           setRetryIn(retryAfter);
@@ -132,6 +123,20 @@ export default function Login() {
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <h2>Вход в профила</h2>
+
+          {messages.length > 0 && (
+            <div className="auth-alert">
+              {messages.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
+            </div>
+          )}
+
+          {retryIn > 0 && (
+            <div className="auth-alert">
+              <p>Опитай отново след {retryIn} сек.</p>
+            </div>
+          )}
 
           <label>
             Имейл
@@ -161,20 +166,6 @@ export default function Login() {
               }
             }}
           />
-
-          {messages.length > 0 && (
-            <div className="auth-alert">
-              {messages.map((message) => (
-                <p key={message}>{message}</p>
-              ))}
-            </div>
-          )}
-
-          {retryIn > 0 && (
-            <div className="auth-alert">
-              <p>Опитай отново след {retryIn} сек.</p>
-            </div>
-          )}
 
           <div className="auth-row">
             <label className="auth-check">

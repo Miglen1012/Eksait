@@ -2,9 +2,13 @@ const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000")
   .split(",")[0]
   .trim()
   .replace(/\/$/, "") || "http://localhost:8000";
-const CART_SESSION_KEY = "excompany_cart_session_id";
+const CART_SESSION_KEY = "cart_session_id";
+const LEGACY_CART_SESSION_KEY = "excompany_cart_session_id";
 const AUTH_TOKEN_KEY = "auth_token";
+const CART_SESSION_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
+const DEFAULT_ERROR_MESSAGE = "Възникна проблем. Моля, опитайте отново.";
+const CONNECTION_ERROR_MESSAGE = "Няма връзка със сървъра. Моля, опитайте отново след малко.";
 
 function createSessionId() {
   if (crypto.randomUUID) {
@@ -17,12 +21,21 @@ function createSessionId() {
 export function getCartSessionId() {
   const storedSessionId = localStorage.getItem(CART_SESSION_KEY);
 
-  if (storedSessionId) {
+  if (CART_SESSION_PATTERN.test(storedSessionId || "")) {
     return storedSessionId;
+  }
+
+  const legacySessionId = localStorage.getItem(LEGACY_CART_SESSION_KEY);
+
+  if (CART_SESSION_PATTERN.test(legacySessionId || "")) {
+    localStorage.setItem(CART_SESSION_KEY, legacySessionId);
+    localStorage.removeItem(LEGACY_CART_SESSION_KEY);
+    return legacySessionId;
   }
 
   const sessionId = createSessionId();
   localStorage.setItem(CART_SESSION_KEY, sessionId);
+  localStorage.removeItem(LEGACY_CART_SESSION_KEY);
   return sessionId;
 }
 
@@ -70,6 +83,30 @@ export function getTokenFromResponse(data) {
   return data?.token || data?.access_token || data?.plainTextToken || data?.data?.token;
 }
 
+function getCartSessionIdFromResponse(data) {
+  return data?.session_id ||
+    data?.cart_session_id ||
+    data?.cartSessionId ||
+    data?.cart?.session_id ||
+    data?.cart?.cart_session_id ||
+    data?.cart?.cartSessionId ||
+    data?.data?.session_id ||
+    data?.data?.cart_session_id ||
+    data?.data?.cartSessionId ||
+    data?.data?.cart?.session_id ||
+    data?.data?.cart?.cart_session_id ||
+    data?.data?.cart?.cartSessionId;
+}
+
+function storeCartSessionId(sessionId) {
+  if (!CART_SESSION_PATTERN.test(String(sessionId || ""))) {
+    return;
+  }
+
+  localStorage.setItem(CART_SESSION_KEY, sessionId);
+  localStorage.removeItem(LEGACY_CART_SESSION_KEY);
+}
+
 function buildHeaders() {
   const token = getAuthToken();
   const headers = {
@@ -100,7 +137,12 @@ async function parseResponse(response) {
       handleUnauthorizedResponse();
     }
 
-    const error = new Error(data?.message || "Request failed.");
+    const backendMessage = typeof data?.message === "string"
+      ? data.message
+      : typeof data?.error === "string"
+        ? data.error
+        : DEFAULT_ERROR_MESSAGE;
+    const error = new Error(backendMessage);
     error.status = response.status;
     error.errors = data?.errors || null;
     error.data = data;
@@ -108,6 +150,7 @@ async function parseResponse(response) {
     throw error;
   }
 
+  storeCartSessionId(getCartSessionIdFromResponse(data));
   return data;
 }
 
@@ -127,20 +170,64 @@ export async function apiRequest(path, options = {}) {
       throw error;
     }
 
-    throw error || new Error("Could not connect to server.");
+    throw error || new Error(CONNECTION_ERROR_MESSAGE);
   }
+}
+
+function collectMessages(value, messages = []) {
+  if (!value) {
+    return messages;
+  }
+
+  if (typeof value === "string") {
+    const message = value.trim();
+
+    if (message) {
+      messages.push(message);
+    }
+
+    return messages;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectMessages(item, messages));
+    return messages;
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.message === "string") {
+      collectMessages(value.message, messages);
+    }
+
+    Object.values(value).forEach((item) => {
+      if (item !== value.message) {
+        collectMessages(item, messages);
+      }
+    });
+  }
+
+  return messages;
 }
 
 export function normalizeErrors(error) {
   if (error?.message === "Failed to fetch") {
-    return ["Could not connect to server. Please try again in a moment."];
+    return [CONNECTION_ERROR_MESSAGE];
   }
 
-  if (!error?.errors) {
-    return [error?.message || "Something went wrong. Please try again."];
-  }
+  const messages = collectMessages([
+    error?.data?.message,
+    error?.data?.messages,
+    error?.data?.error,
+    error?.data?.detail,
+    error?.errors,
+    error?.message,
+  ]);
 
-  return Object.values(error.errors).flat();
+  const normalizedMessages = [...new Set(messages)].filter(Boolean).map((message) => (
+    message === "Request failed." ? DEFAULT_ERROR_MESSAGE : message
+  ));
+
+  return normalizedMessages.length > 0 ? normalizedMessages : [DEFAULT_ERROR_MESSAGE];
 }
 
 export function getFieldErrors(error, fields = []) {

@@ -1,16 +1,86 @@
-# React + Vite
+# EXCompany Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite frontend за сайта на Excite Company.
 
-Currently, two official plugins are available:
+## Изисквания
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 20 или по-нова версия
+- npm
+- Работещ backend API
 
-## React Compiler
+## Инсталация
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+```
 
-## Expanding the ESLint configuration
+## Environment настройки
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Копирайте примерния env файл:
+
+```bash
+cp .env.example .env
+```
+
+На Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Настройте адреса на backend API в `.env`:
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+Ако backend-ът е на друг адрес, сменете стойността на `VITE_API_URL`.
+
+## Стартиране за разработка
+
+```bash
+npm run dev
+```
+
+Vite ще покаже локален адрес, обикновено:
+
+```text
+http://localhost:5173
+```
+
+## Production build
+
+```bash
+npm run build
+```
+
+Готовите файлове се генерират в `dist/`.
+
+## Преглед на production build
+
+```bash
+npm run preview
+```
+
+## Полезни команди
+
+```bash
+npm run lint
+npm run build
+```
+
+## Cart session
+
+Frontend-ът пази guest cart session в `localStorage` под ключ:
+
+```text
+cart_session_id
+```
+
+Този session id се изпраща автоматично към API заявките като header:
+
+```text
+X-Cart-Session-Id
+```
+
+Същият session id се използва и при guest cart, checkout, login и register flow.

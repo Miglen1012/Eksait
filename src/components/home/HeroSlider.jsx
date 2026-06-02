@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_URL, apiRequest } from "../../api/client";
+import { fetchHomeBanners, getCachedHomeBanners } from "../../api/homeBanner";
 import sliderImageOne from "../../assets/hero/slider.jpg";
 import sliderImageTwo from "../../assets/hero/slider1.jpg";
 import sliderImageThree from "../../assets/hero/slider-4.jpg";
@@ -27,40 +27,6 @@ const DEFAULT_SLIDES = [
   sort_order: index,
 }));
 
-function normalizeBannerItems(data) {
-  const items = Array.isArray(data?.items) ? data.items : [];
-
-  return items.map((item, index) => ({
-    id: item?.id ?? `banner-${index}`,
-    eyebrow: item?.eyebrow || "",
-    title: item?.title || "",
-    subtitle: item?.subtitle || "",
-    button_text: item?.button_text || "",
-    button_url: item?.button_url || "",
-    image_url: resolveBannerImageUrl(item?.image_url || item?.image || ""),
-    sort_order: item?.sort_order ?? index,
-  }));
-}
-
-function resolveBannerImageUrl(value) {
-  const rawUrl = String(value || "").trim();
-
-  if (!rawUrl) {
-    return sliderImageOne;
-  }
-
-  if (/^https?:\/\//i.test(rawUrl) || rawUrl.startsWith("data:") || rawUrl.startsWith("blob:")) {
-    return rawUrl;
-  }
-
-  if (rawUrl.startsWith("//")) {
-    return `${window.location.protocol}${rawUrl}`;
-  }
-
-  const normalizedPath = rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`;
-  return `${API_URL}${normalizedPath}`;
-}
-
 function getRenderedImageUrl(slide, brokenImages) {
   if (!slide) {
     return sliderImageOne;
@@ -74,7 +40,7 @@ function getRenderedImageUrl(slide, brokenImages) {
 }
 
 export default function HeroSlider() {
-  const [items, setItems] = useState(DEFAULT_SLIDES);
+  const [items, setItems] = useState(() => getCachedHomeBanners() || DEFAULT_SLIDES);
   const [error, setError] = useState(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [brokenImages, setBrokenImages] = useState({});
@@ -86,8 +52,7 @@ export default function HeroSlider() {
       setError(null);
 
       try {
-        const data = await apiRequest("/api/home-banner");
-        const normalized = normalizeBannerItems(data);
+        const normalized = await fetchHomeBanners();
 
         if (isMounted) {
           setItems(normalized.length > 0 ? normalized : DEFAULT_SLIDES);

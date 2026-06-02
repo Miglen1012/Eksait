@@ -21,6 +21,11 @@
 
 * { box-sizing: border-box; }
 
+::selection {
+  color: #ffffff;
+  background: #d71920;
+}
+
 html {
   overflow-x: hidden;
 }

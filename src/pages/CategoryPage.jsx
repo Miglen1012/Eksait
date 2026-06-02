@@ -5,19 +5,20 @@ import CustomSelect from "../components/form/CustomSelect";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
 import { categories, getCategoryByName, getCategoryBySlug } from "../data/categories";
 import { DEFAULT_PRODUCT_PAGE_SIZE, getPageSizeFromSearch } from "../utils/pagination";
-import { formatPrice, stripHtml } from "../utils/products";
+import { formatPrice } from "../utils/products";
 import { normalizeSearchText } from "../utils/search";
 import "../styles/products.css";
 
 const sortOptions = [
-  { value: "default", label: "Подредба" },
-  { value: "name", label: "По име" },
-  { value: "price-asc", label: "Цена възходящо" },
-  { value: "price-desc", label: "Цена низходящо" },
+  { value: "name-asc", label: "По име А-Я" },
+  { value: "name-desc", label: "По име Я-А" },
+  { value: "price-asc", label: "Цена възходяща" },
+  { value: "price-desc", label: "Цена низходяща" },
 ];
 const productNameCollator = new Intl.Collator("bg-BG", { sensitivity: "base", numeric: true });
 const PRICE_RANGE_STEP = 0.01;
 const TOOLS_PARENT_CATEGORY_TOKENS = ["instrumenti", "tools"];
+const sortValues = new Set(sortOptions.map((option) => option.value));
 const TOOLS_CATEGORY_TOKENS = categories
   .flatMap((category) => [category.label, category.slug])
   .map((token) => normalizeSearchText(token))
@@ -26,6 +27,26 @@ const TOOLS_CATEGORY_TOKENS = categories
 function getPageFromSearch() {
   const rawPage = Number.parseInt(new URLSearchParams(window.location.search).get("page") || "1", 10);
   return Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+}
+
+function getSortModeFromSearch() {
+  const sortMode = new URLSearchParams(window.location.search).get("sort") || "default";
+  return sortValues.has(sortMode) ? sortMode : "default";
+}
+
+function getCatalogFiltersFromSearch() {
+  const search = new URLSearchParams(window.location.search);
+
+  return {
+    minPrice: search.get("min_price") || "",
+    maxPrice: search.get("max_price") || "",
+    size: search.get("size") || "",
+    material: search.get("material") || "",
+  };
+}
+
+function getSearchTermFromSearch() {
+  return new URLSearchParams(window.location.search).get("q") || "";
 }
 
 function getCategoryFromPath() {
@@ -117,6 +138,24 @@ function productMatchesCategory(product, selectedCategory) {
   });
 }
 
+function productMatchesSearchTerm(product, searchTerm) {
+  const normalizedSearchTerm = normalizeSearchText(searchTerm);
+
+  if (!normalizedSearchTerm) {
+    return true;
+  }
+
+  return String(product.searchText || "").includes(normalizedSearchTerm);
+}
+
+function getCatalogPriceBoundProducts(products, categoryName, searchTerm) {
+  return products.filter((product) => (
+    productMatchesToolsParentCategory(product) &&
+    productMatchesCategory(product, categoryName) &&
+    productMatchesSearchTerm(product, searchTerm)
+  ));
+}
+
 function getProductSizes(product) {
   return product.variants
     .map((variant) => String(variant.size || "").trim())
@@ -158,6 +197,68 @@ function getRangePercent(value, min, max) {
 
 function formatRangeValue(value) {
   return Number(value).toFixed(2);
+}
+
+function setSearchParam(search, key, value) {
+  const nextValue = String(value || "").trim();
+
+  if (nextValue) {
+    search.set(key, nextValue);
+  } else {
+    search.delete(key);
+  }
+}
+
+function buildCatalogSearchParams({ filters, productsPerPage, searchTerm, sortMode, page = 1 }) {
+  const nextSearch = new URLSearchParams();
+
+  if (page > 1) {
+    nextSearch.set("page", String(page));
+  }
+
+  if (productsPerPage !== DEFAULT_PRODUCT_PAGE_SIZE) {
+    nextSearch.set("per_page", String(productsPerPage));
+  }
+
+  setSearchParam(nextSearch, "q", searchTerm);
+  setSearchParam(nextSearch, "min_price", filters.minPrice);
+  setSearchParam(nextSearch, "max_price", filters.maxPrice);
+  setSearchParam(nextSearch, "size", filters.size);
+  setSearchParam(nextSearch, "material", filters.material);
+
+  if (sortMode && sortMode !== "default") {
+    nextSearch.set("sort", sortMode);
+  }
+
+  return nextSearch;
+}
+
+function persistCurrentScrollPosition() {
+  window.history.replaceState(
+    {
+      ...(window.history.state || {}),
+      __appScrollState: true,
+      scrollY: window.scrollY,
+    },
+    "",
+    `${window.location.pathname}${window.location.search}${window.location.hash}`,
+  );
+}
+
+function sanitizePriceFilters(filters, priceBounds) {
+  if (priceBounds.max <= 0) {
+    return {
+      ...filters,
+      minPrice: "",
+      maxPrice: "",
+    };
+  }
+
+  return {
+    ...filters,
+    minPrice: filters.minPrice === "" ? "" : formatRangeValue(clampPrice(filters.minPrice, priceBounds.min, priceBounds.max)),
+    maxPrice: filters.maxPrice === "" ? "" : formatRangeValue(clampPrice(filters.maxPrice, priceBounds.min, priceBounds.max)),
+  };
 }
 
 function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
@@ -300,7 +401,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
 
 function CatalogFilterPanel({
   filters,
-  priceBounds,
+  products,
   searchTerm,
   selectedCategory,
   sortMode,
@@ -311,6 +412,10 @@ function CatalogFilterPanel({
   const [draftSearchTerm, setDraftSearchTerm] = useState(searchTerm);
   const [draftSortMode, setDraftSortMode] = useState(sortMode);
   const [draftFilters, setDraftFilters] = useState(filters);
+  const draftPriceBounds = useMemo(
+    () => getPriceBounds(getCatalogPriceBoundProducts(products, draftCategory, draftSearchTerm)),
+    [draftCategory, draftSearchTerm, products],
+  );
   const activeCount = [
     selectedCategory,
     searchTerm,
@@ -356,10 +461,12 @@ function CatalogFilterPanel({
   }
 
   function selectDraftCategory(categoryName) {
+    const nextPriceBounds = getPriceBounds(getCatalogPriceBoundProducts(products, categoryName, draftSearchTerm));
+
     setDraftCategory(categoryName);
     onApply({
       categoryName,
-      filters: draftFilters,
+      filters: sanitizePriceFilters(draftFilters, nextPriceBounds),
       searchTerm: draftSearchTerm,
       sortMode: draftSortMode,
     });
@@ -368,7 +475,7 @@ function CatalogFilterPanel({
   function applyDraftFilters() {
     onApply({
       categoryName: draftCategory,
-      filters: draftFilters,
+      filters: sanitizePriceFilters(draftFilters, draftPriceBounds),
       searchTerm: draftSearchTerm,
       sortMode: draftSortMode,
     });
@@ -440,7 +547,7 @@ function CatalogFilterPanel({
                   value={draftSortMode}
                   onChange={setDraftSortMode}
                   options={sortOptions}
-                  placeholder="Подредба"
+                  placeholder="Избери"
         />
               </label>
             </div>
@@ -448,7 +555,7 @@ function CatalogFilterPanel({
             <PriceRangeFilter
               filters={draftFilters}
               onFilterChange={updateDraftFilter}
-              priceBounds={priceBounds}
+              priceBounds={draftPriceBounds}
             />
 
             <div className="catalog-filter-actions">
@@ -502,7 +609,7 @@ function SidebarFilters({
           value={sortMode}
           onChange={onSortChange}
           options={sortOptions}
-          placeholder="Подредба"
+          placeholder="Избери"
         />
       </label>
 
@@ -609,21 +716,18 @@ export default function CategoryPage({ slug }) {
   const initialCategory = getCategoryBySlug(slug)?.label || "";
   const [products, setProducts] = useState(() => getCachedProducts() || []);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(getSearchTermFromSearch);
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [sortMode, setSortMode] = useState("default");
+  const [sortMode, setSortMode] = useState(getSortModeFromSearch);
   const [productsPerPage, setProductsPerPage] = useState(getPageSizeFromSearch);
-  const [filters, setFilters] = useState({
-    minPrice: "",
-    maxPrice: "",
-    size: "",
-    material: "",
-  });
+  const [filters, setFilters] = useState(getCatalogFiltersFromSearch);
   const [currentPage, setCurrentPage] = useState(getPageFromSearch);
   const [loading, setLoading] = useState(() => !getCachedProducts());
   const [messages, setMessages] = useState([]);
   const productsMainRef = useRef(null);
+  const shouldScrollOnPageChangeRef = useRef(false);
+  const historyEntryScrollPersistedRef = useRef(false);
 
   async function refreshProducts() {
     setProducts(await fetchProducts());
@@ -638,11 +742,6 @@ export default function CategoryPage({ slug }) {
       return matchesToolsParentCategory && matchesCategory;
     });
   }, [products, searchResults, searchTerm, selectedCategory]);
-
-  const priceBounds = useMemo(
-    () => getPriceBounds(baseFilteredProducts),
-    [baseFilteredProducts],
-  );
 
   const filteredProducts = useMemo(() => {
     const minPrice = filters.minPrice === "" ? null : Number(filters.minPrice);
@@ -659,8 +758,12 @@ export default function CategoryPage({ slug }) {
     });
 
     return [...nextProducts].sort((firstProduct, secondProduct) => {
-      if (sortMode === "name") {
+      if (sortMode === "name-asc") {
         return productNameCollator.compare(firstProduct.name, secondProduct.name);
+      }
+
+      if (sortMode === "name-desc") {
+        return productNameCollator.compare(secondProduct.name, firstProduct.name);
       }
 
       if (sortMode === "price-asc") {
@@ -684,17 +787,25 @@ export default function CategoryPage({ slug }) {
   }, [filteredProducts, productsPerPage, visibleCurrentPage]);
 
   useEffect(() => {
-    if (loading || !productsMainRef.current) {
+    if (loading || !productsMainRef.current || !shouldScrollOnPageChangeRef.current) {
       return;
     }
 
+    shouldScrollOnPageChangeRef.current = false;
     const top = window.scrollY + productsMainRef.current.getBoundingClientRect().top - 118;
     window.scrollTo({ top: Math.max(0, top), left: 0, behavior: "auto" });
   }, [visibleCurrentPage, loading]);
 
   useEffect(() => {
-    function handleHistoryChange() {
+    function handleHistoryChange(event) {
+      if (event.type === "popstate") {
+        shouldScrollOnPageChangeRef.current = false;
+      }
+
       setSelectedCategory(getCategoryFromPath());
+      setSearchTerm(getSearchTermFromSearch());
+      setSortMode(getSortModeFromSearch());
+      setFilters(getCatalogFiltersFromSearch());
       setCurrentPage(getPageFromSearch());
       setProductsPerPage(getPageSizeFromSearch());
     }
@@ -709,31 +820,38 @@ export default function CategoryPage({ slug }) {
   }, []);
 
   useEffect(() => {
-    const nextSearch = new URLSearchParams(window.location.search);
-
-    if (visibleCurrentPage > 1) {
-      nextSearch.set("page", String(visibleCurrentPage));
-    } else {
-      nextSearch.delete("page");
-    }
-
-    if (productsPerPage !== DEFAULT_PRODUCT_PAGE_SIZE) {
-      nextSearch.set("per_page", String(productsPerPage));
-    } else {
-      nextSearch.delete("per_page");
-    }
+    const nextSearch = buildCatalogSearchParams({
+      filters,
+      productsPerPage,
+      searchTerm,
+      sortMode,
+      page: visibleCurrentPage,
+    });
 
     const nextSearchText = nextSearch.toString();
     const nextUrl = `${window.location.pathname}${nextSearchText ? `?${nextSearchText}` : ""}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
     if (nextUrl === currentUrl) {
+      historyEntryScrollPersistedRef.current = false;
       return;
     }
 
-    window.history.pushState(window.history.state || {}, "", nextUrl);
+    if (!historyEntryScrollPersistedRef.current) {
+      persistCurrentScrollPosition();
+    }
+
+    historyEntryScrollPersistedRef.current = false;
+    window.history.pushState(
+      {
+        __appScrollState: true,
+        scrollY: window.scrollY,
+      },
+      "",
+      nextUrl,
+    );
     window.dispatchEvent(new Event("app:navigate"));
-  }, [productsPerPage, visibleCurrentPage]);
+  }, [filters, productsPerPage, searchTerm, sortMode, visibleCurrentPage]);
 
   useEffect(() => {
     async function loadProducts() {
@@ -793,12 +911,23 @@ export default function CategoryPage({ slug }) {
   }, [productsPerPage, searchTerm]);
 
   function handleProductsPerPageChange(value) {
+    persistCurrentScrollPosition();
+    historyEntryScrollPersistedRef.current = true;
+    shouldScrollOnPageChangeRef.current = true;
     setProductsPerPage(value);
     setCurrentPage(1);
   }
 
+  function handlePageChange(page) {
+    persistCurrentScrollPosition();
+    historyEntryScrollPersistedRef.current = true;
+    shouldScrollOnPageChangeRef.current = true;
+    setCurrentPage(page);
+  }
+
   function handleCatalogFilterApply({ categoryName, filters: nextFilters, searchTerm: nextSearchTerm, sortMode: nextSortMode }) {
     const category = getCategoryByName(categoryName);
+    shouldScrollOnPageChangeRef.current = true;
     setSelectedCategory(categoryName);
     setSearchTerm(nextSearchTerm);
     setSortMode(nextSortMode);
@@ -806,17 +935,27 @@ export default function CategoryPage({ slug }) {
     setCurrentPage(1);
 
     const nextPath = category ? `/category/${category.slug}` : "/category";
-    const nextSearch = new URLSearchParams();
-
-    if (productsPerPage !== DEFAULT_PRODUCT_PAGE_SIZE) {
-      nextSearch.set("per_page", String(productsPerPage));
-    }
+    const nextSearch = buildCatalogSearchParams({
+      filters: nextFilters,
+      productsPerPage,
+      searchTerm: nextSearchTerm,
+      sortMode: nextSortMode,
+      page: 1,
+    });
 
     const nextSearchText = nextSearch.toString();
     const nextUrl = `${nextPath}${nextSearchText ? `?${nextSearchText}` : ""}`;
 
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
-      window.history.pushState(window.history.state || {}, "", nextUrl);
+      persistCurrentScrollPosition();
+      window.history.pushState(
+        {
+          __appScrollState: true,
+          scrollY: window.scrollY,
+        },
+        "",
+        nextUrl,
+      );
       window.dispatchEvent(new Event("app:navigate"));
     }
   }
@@ -842,7 +981,7 @@ export default function CategoryPage({ slug }) {
             </div>
             <CatalogFilterPanel
               filters={filters}
-              priceBounds={priceBounds}
+              products={products}
               searchTerm={searchTerm}
               selectedCategory={selectedCategory}
               sortMode={sortMode}
@@ -905,8 +1044,8 @@ export default function CategoryPage({ slug }) {
                 <ProductPagination
                   currentPage={visibleCurrentPage}
                   totalPages={totalPages}
-                  onPageChange={setCurrentPage}
-        />
+                  onPageChange={handlePageChange}
+                />
               </>
             )}
           </div>

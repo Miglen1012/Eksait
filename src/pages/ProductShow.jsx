@@ -178,7 +178,8 @@ export default function ProductShow({ productKey }) {
     ? Math.min(Math.max(purchaseQuantity, 1), maxPurchasableQuantity)
     : 1;
   const hasPurchasablePrice = hasPositivePrice(purchasable.price);
-  const canAddToCart = !addingTarget && !purchasable.needsVariant && purchasable.isAvailable && hasPurchasablePrice;
+  const adding = Boolean(addingTarget);
+  const canAddToCart = !adding && !purchasable.needsVariant && purchasable.isAvailable && hasPurchasablePrice;
 
   useEffect(() => {
     if (!successMessage) {

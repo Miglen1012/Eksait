@@ -1,7 +1,34 @@
+import { useEffect, useState } from "react";
+import { fetchEquipmentProducts } from "../../api/equipment";
 import logo from "../../assets/es-logo1.png";
 import "../../styles/layout.css";
 
 export default function Footer() {
+  const [hasEquipmentProducts, setHasEquipmentProducts] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadEquipmentAvailability() {
+      try {
+        const equipmentProducts = await fetchEquipmentProducts({ force: true });
+        if (isMounted) {
+          setHasEquipmentProducts(equipmentProducts.length > 0);
+        }
+      } catch {
+        if (isMounted) {
+          setHasEquipmentProducts(false);
+        }
+      }
+    }
+
+    loadEquipmentAvailability();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <footer className="site-footer">
       <div className="footer-top-line"></div>
@@ -28,7 +55,7 @@ export default function Footer() {
             <li><a href="/">Начало</a></li>
             <li><a href="/about">За нас</a></li>
             <li><a href="/category">Инструменти</a></li>
-            <li><a href="/equipment">Оборудване</a></li>
+            {hasEquipmentProducts && <li><a href="/equipment">Оборудване</a></li>}
             <li><a href="/contact">Контакти</a></li>
           </ul>
         </div>

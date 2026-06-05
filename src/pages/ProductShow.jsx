@@ -49,6 +49,19 @@ function getProductIdentity(product) {
   return String(product?.id || product?.slug || "");
 }
 
+function getProductDisplayCode(product, selectedVariantId) {
+  const selectedVariant = hasProductVariants(product)
+    ? product.variants.find((variant) => String(variant.id) === String(selectedVariantId))
+    : null;
+
+  const code =
+    selectedVariant?.relatedProductId ??
+    selectedVariant?.productId ??
+    product?.id;
+
+  return code === null || typeof code === "undefined" || code === "" ? "" : String(code);
+}
+
 function resetScrollToTop() {
   const root = document.documentElement;
   const previousScrollBehavior = root.style.scrollBehavior;
@@ -67,9 +80,10 @@ export default function ProductShow({ productKey }) {
   const [successMessage, setSuccessMessage] = useState("");
   const [activeImage, setActiveImage] = useState("");
   const [previewImage, setPreviewImage] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [addingTarget, setAddingTarget] = useState("");
   const [selectedVariantId, setSelectedVariantId] = useState("");
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
+  const [variantQuantities, setVariantQuantities] = useState({});
   const [activeDetailsTab, setActiveDetailsTab] = useState("sizes");
   const [variantTableSearch, setVariantTableSearch] = useState("");
   const relatedScrollerRef = useRef(null);
@@ -164,7 +178,7 @@ export default function ProductShow({ productKey }) {
     ? Math.min(Math.max(purchaseQuantity, 1), maxPurchasableQuantity)
     : 1;
   const hasPurchasablePrice = hasPositivePrice(purchasable.price);
-  const canAddToCart = !adding && !purchasable.needsVariant && purchasable.isAvailable && hasPurchasablePrice;
+  const canAddToCart = !addingTarget && !purchasable.needsVariant && purchasable.isAvailable && hasPurchasablePrice;
 
   useEffect(() => {
     if (!successMessage) {
@@ -178,35 +192,59 @@ export default function ProductShow({ productKey }) {
     return () => window.clearTimeout(timer);
   }, [successMessage]);
 
-  async function addToCart() {
-    if (hasProductVariants(product) && !safeSelectedVariantId) {
+  function getVariantPurchasable(variantId) {
+    return getPurchasableState(product, variantId);
+  }
+
+  function getVariantMaxPurchasableQuantity(variantId) {
+    return getMaxPurchasableQuantity(getVariantPurchasable(variantId));
+  }
+
+  function getSafeVariantQuantity(variantId) {
+    const maxQuantity = getVariantMaxPurchasableQuantity(variantId);
+    const rawQuantity = Number(variantQuantities[variantId] ?? 1);
+
+    if (!Number.isFinite(rawQuantity) || rawQuantity < 1) {
+      return 1;
+    }
+
+    return maxQuantity > 0
+      ? Math.min(Math.max(rawQuantity, 1), maxQuantity)
+      : Math.max(rawQuantity, 1);
+  }
+
+  async function addToCart({ variantId = "", quantity, target = "main" } = {}) {
+    if (hasProductVariants(product) && !variantId) {
       setMessages(["Изберете тип/размер преди добавяне в количката."]);
       return;
     }
 
-    if (!purchasable.isAvailable) {
+    const nextPurchasable = variantId ? getVariantPurchasable(variantId) : purchasable;
+    const maxQuantity = getMaxPurchasableQuantity(nextPurchasable);
+
+    if (!nextPurchasable.isAvailable) {
       setMessages(["Продуктът не е наличен."]);
       return;
     }
 
-    if (!hasPositivePrice(purchasable.price)) {
+    if (!hasPositivePrice(nextPurchasable.price)) {
       setMessages(["Този тип/размер няма въведена цена и не може да бъде поръчан. Изберете друг тип/размер."]);
       return;
     }
 
-    const quantity = Number(safePurchaseQuantity);
+    const normalizedQuantity = Number(quantity);
 
-    if (!Number.isFinite(quantity) || quantity < 1) {
+    if (!Number.isFinite(normalizedQuantity) || normalizedQuantity < 1) {
       setMessages(["Изберете валидно количество."]);
       return;
     }
 
-    if (maxPurchasableQuantity > 0 && quantity > maxPurchasableQuantity) {
+    if (maxQuantity > 0 && normalizedQuantity > maxQuantity) {
       setMessages(["Не може да закупите повече."]);
       return;
     }
 
-    setAdding(true);
+    setAddingTarget(target);
     setMessages([]);
     setSuccessMessage("");
 
@@ -214,8 +252,8 @@ export default function ProductShow({ productKey }) {
       await apiRequest(`/api/cart/add/${product.id}`, {
         method: "POST",
         body: JSON.stringify({
-          quantity,
-          ...(safeSelectedVariantId ? { product_variant_id: safeSelectedVariantId } : {}),
+          quantity: normalizedQuantity,
+          ...(variantId ? { product_variant_id: variantId } : {}),
           session_id: getCartSessionId(),
         }),
       });
@@ -229,7 +267,7 @@ export default function ProductShow({ productKey }) {
         // Keep the backend validation message visible even if refresh fails.
       }
     } finally {
-      setAdding(false);
+      setAddingTarget("");
     }
   }
 
@@ -242,6 +280,22 @@ export default function ProductShow({ productKey }) {
 
     const clamped = Math.max(1, maxPurchasableQuantity > 0 ? Math.min(parsed, maxPurchasableQuantity) : parsed);
     setPurchaseQuantity(clamped);
+  }
+
+  function updateVariantQuantity(variantId, nextValue) {
+    const parsed = Number(nextValue);
+
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+
+    const maxQuantity = getVariantMaxPurchasableQuantity(variantId);
+    const clamped = Math.max(1, maxQuantity > 0 ? Math.min(parsed, maxQuantity) : parsed);
+
+    setVariantQuantities((current) => ({
+      ...current,
+      [variantId]: clamped,
+    }));
   }
 
   if (loading) {
@@ -267,6 +321,7 @@ export default function ProductShow({ productKey }) {
   const categoryNames = product.categories.map((category) => category.name).filter(Boolean).join(", ");
   const description = product.plainDescription || stripHtml(product.description);
   const extraInformation = product.extraInformation || "";
+  const productDisplayCode = getProductDisplayCode(product, safeSelectedVariantId);
   const hasExtraInformation = hasRichTextContent(extraInformation);
   const hasSizeTable = hasProductVariants(product);
   const detailsTabs = [
@@ -387,7 +442,7 @@ export default function ProductShow({ productKey }) {
                   {purchasable.isAvailable ? "В наличност" : "Не е наличен"}
                 </div>
               )}
-              {product.slug && <span className="product-code">Код: {product.slug}</span>}
+              {productDisplayCode && <span className="product-code">Код: {productDisplayCode}</span>}
             </div>
 
             <div className="product-show-buy">
@@ -442,10 +497,14 @@ export default function ProductShow({ productKey }) {
               <button
                 type="button"
                 className="product-show-add-button"
-                onClick={addToCart}
+                onClick={() => addToCart({
+                  variantId: safeSelectedVariantId,
+                  quantity: safePurchaseQuantity,
+                  target: "main",
+                })}
                 disabled={!canAddToCart}
               >
-                {adding
+                {addingTarget === "main"
                   ? "Добавяне..."
                   : purchasable.needsVariant
                     ? "Избери тип/размер"
@@ -564,6 +623,8 @@ export default function ProductShow({ productKey }) {
                           <th>Тип/Размер</th>
                           <th>Цена</th>
                           <th>Наличност</th>
+                          <th>Бройка</th>
+                          <th>Добавяне</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -572,10 +633,71 @@ export default function ProductShow({ productKey }) {
                             <td>{variant.size || "-"}</td>
                             <td>{formatPrice(variant.price)}</td>
                             <td>{isVariantAvailable(variant) ? "В наличност" : "Изчерпан"}</td>
+                            <td>
+                              <div className="product-show-table-quantity-control" aria-label={`Количество за ${variant.size || product.name}`}>
+                                <button
+                                  type="button"
+                                  className="product-show-table-qty-btn"
+                                  onClick={() => updateVariantQuantity(variant.id, getSafeVariantQuantity(variant.id) - 1)}
+                                  disabled={addingTarget === `variant:${variant.id}` || getSafeVariantQuantity(variant.id) <= 1}
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={getVariantMaxPurchasableQuantity(variant.id) > 0 ? getVariantMaxPurchasableQuantity(variant.id) : undefined}
+                                  value={getSafeVariantQuantity(variant.id)}
+                                  onChange={(event) => updateVariantQuantity(variant.id, event.target.value)}
+                                  disabled={addingTarget === `variant:${variant.id}` || !isVariantAvailable(variant) || !hasPositivePrice(variant.price)}
+                                  aria-label={`Бройка за ${variant.size || product.name}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="product-show-table-qty-btn"
+                                  onClick={() => updateVariantQuantity(variant.id, getSafeVariantQuantity(variant.id) + 1)}
+                                  disabled={
+                                    addingTarget === `variant:${variant.id}` ||
+                                    getVariantMaxPurchasableQuantity(variant.id) <= 0 ||
+                                    getSafeVariantQuantity(variant.id) >= getVariantMaxPurchasableQuantity(variant.id)
+                                  }
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="product-show-table-add-button"
+                                onClick={() => {
+                                  setSelectedVariantId(String(variant.id));
+                                  setPurchaseQuantity(getSafeVariantQuantity(variant.id));
+                                  addToCart({
+                                    variantId: String(variant.id),
+                                    quantity: getSafeVariantQuantity(variant.id),
+                                    target: `variant:${variant.id}`,
+                                  });
+                                }}
+                                disabled={
+                                  Boolean(addingTarget) ||
+                                  !isVariantAvailable(variant) ||
+                                  !hasPositivePrice(variant.price)
+                                }
+                              >
+                                {addingTarget === `variant:${variant.id}`
+                                  ? "Добавяне..."
+                                  : !isVariantAvailable(variant)
+                                    ? "Изчерпан"
+                                    : hasPositivePrice(variant.price)
+                                      ? "Добави"
+                                      : "Няма цена"}
+                              </button>
+                            </td>
                           </tr>
                         )) : (
                           <tr>
-                            <td colSpan="3" className="product-show-size-empty">
+                            <td colSpan="5" className="product-show-size-empty">
                               Няма типове/размери, които съвпадат с търсенето.
                             </td>
                           </tr>

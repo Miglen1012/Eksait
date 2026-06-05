@@ -193,6 +193,8 @@ function normalizeVariant(variant) {
 
   return {
     id: variant.id,
+    productId: variant.product_id ?? variant.productId ?? variant.product?.id ?? null,
+    relatedProductId: variant.related_product_id ?? variant.relatedProductId ?? variant.related_product?.id ?? variant.relatedProduct?.id ?? null,
     size: variant.size || variant.name || "",
     price: toNumber(variant.sale_price ?? variant.price, 0),
     regularPrice: toNumber(variant.price, 0),

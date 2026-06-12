@@ -1,5 +1,13 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest, getApiBaseUrl, getAuthToken, getCartSessionId, normalizeErrors } from "../api/client";
+import {
+  apiRequest,
+  fetchCurrentUser,
+  getApiBaseUrl,
+  getAuthToken,
+  getCachedAuthUser,
+  getCartSessionId,
+  normalizeErrors,
+} from "../api/client";
 import { fetchProducts } from "../api/products";
 import { getCartItemsFromResponse, responseIncludesCartItems } from "../utils/cart";
 import { useLanguage } from "../utils/language";
@@ -29,12 +37,16 @@ const fallbackPaymentMethods = [
   { value: "bank_transfer", label: "bank_transfer" },
 ];
 const cartCachePrefix = "excompany_checkout_cart";
+const CHECKOUT_SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
+const CHECKOUT_SETTINGS_REFRESH_MS = 60 * 1000;
 const REMOVE_CONFIRM_DELAY_MS = 4000;
 const priceLocaleByLanguage = {
   bg: "bg-BG",
   en: "en-US",
   de: "de-DE",
 };
+let checkoutSettingsCache = null;
+let checkoutSettingsPromise = null;
 
 function resolveImageUrl(value) {
   const rawUrl = String(value || "").trim();
@@ -77,10 +89,6 @@ async function fetchProductLookup(language) {
   } catch {
     return {};
   }
-}
-
-function getUserFromResponse(data) {
-  return data?.user || data?.data?.user || data?.data || data;
 }
 
 function normalizeBoolean(value) {
@@ -407,22 +415,44 @@ function getStripeEnabledFromResponse(data) {
 }
 
 async function fetchCheckoutSettings() {
-  const endpoints = ["/api/checkout/payment-methods", "/api/checkout/settings", "/api/settings"];
-
-  for (const endpoint of endpoints) {
-    try {
-      const data = await apiRequest(endpoint);
-      const paymentMethods = getResolvedPaymentMethodsFromResponse(data);
-
-      if (paymentMethods !== null) {
-        return { paymentMethods };
-      }
-    } catch {
-      // Try the next known checkout endpoint before falling back to local config.
-    }
+  if (checkoutSettingsCache && Date.now() - checkoutSettingsCache.cachedAt < CHECKOUT_SETTINGS_CACHE_TTL_MS) {
+    return checkoutSettingsCache.value;
   }
 
-  return { paymentMethods: fallbackPaymentMethods };
+  if (checkoutSettingsPromise) {
+    return checkoutSettingsPromise;
+  }
+
+  const endpoints = ["/api/checkout/payment-methods", "/api/checkout/settings", "/api/settings"];
+
+  checkoutSettingsPromise = (async () => {
+    for (const endpoint of endpoints) {
+      try {
+        const data = await apiRequest(endpoint);
+        const paymentMethods = getResolvedPaymentMethodsFromResponse(data);
+
+        if (paymentMethods !== null) {
+          return { paymentMethods };
+        }
+      } catch {
+        // Try the next known checkout endpoint before falling back to local config.
+      }
+    }
+
+    return { paymentMethods: fallbackPaymentMethods };
+  })()
+    .then((settings) => {
+      checkoutSettingsCache = {
+        value: settings,
+        cachedAt: Date.now(),
+      };
+      return settings;
+    })
+    .finally(() => {
+      checkoutSettingsPromise = null;
+    });
+
+  return checkoutSettingsPromise;
 }
 
 function getUserPhone(user) {
@@ -788,7 +818,7 @@ export default function Cart() {
   const [shippingCostLoading, setShippingCostLoading] = useState(false);
   const [shippingCostError, setShippingCostError] = useState("");
   const [messages, setMessages] = useState([]);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => getCachedAuthUser());
   const [paymentMethods, setPaymentMethods] = useState(() => cachedCart?.paymentMethods || []);
   const productLookupRef = useRef(null);
   const removeTimersRef = useRef({});
@@ -799,9 +829,12 @@ export default function Cart() {
   const isApmDelivery = false;
   const needsOffice = isOfficeDelivery;
   const isLoggedIn = Boolean(user);
-  const customerName = isLoggedIn ? getUserName(user) : checkout.customer_name;
-  const customerEmail = isLoggedIn ? getUserEmail(user) : checkout.customer_email;
-  const customerPhone = isLoggedIn ? getUserPhone(user) : checkout.customer_phone;
+  const userName = isLoggedIn ? getUserName(user) : "";
+  const userEmail = isLoggedIn ? getUserEmail(user) : "";
+  const userPhone = isLoggedIn ? getUserPhone(user) : "";
+  const customerName = userName || checkout.customer_name;
+  const customerEmail = userEmail || checkout.customer_email;
+  const customerPhone = userPhone || checkout.customer_phone;
   const phoneError = t("validation.phone");
   const shouldUseEnglishEcontCityInput = language === "de";
   const cityInputPlaceholder = shouldUseEnglishEcontCityInput ? t("cart.cityEnglishPlaceholder") : "";
@@ -1004,7 +1037,7 @@ export default function Cart() {
 
     window.queueMicrotask(updatePaymentMethods);
 
-    const intervalId = window.setInterval(updatePaymentMethods, 3000);
+    const intervalId = window.setInterval(updatePaymentMethods, CHECKOUT_SETTINGS_REFRESH_MS);
 
     function handleFocus() {
       if (document.visibilityState === "visible") {
@@ -1065,8 +1098,7 @@ export default function Cart() {
 
     async function loadUser() {
       try {
-        const data = await apiRequest("/api/me");
-        const user = getUserFromResponse(data);
+        const user = await fetchCurrentUser();
 
         if (!isCancelled && user) {
           setUser(user);
@@ -1647,7 +1679,8 @@ export default function Cart() {
                     name="customer_name"
                     value={customerName}
                     onChange={updateCheckoutField}
-                    readOnly={isLoggedIn}
+                    readOnly={Boolean(userName)}
+                    autoComplete="name"
                   />
                 </label>
                 <label>
@@ -1657,7 +1690,8 @@ export default function Cart() {
                     name="customer_email"
                     value={customerEmail}
                     onChange={updateCheckoutField}
-                    readOnly={isLoggedIn}
+                    readOnly={Boolean(userEmail)}
+                    autoComplete="email"
                   />
                 </label>
                 <label>
@@ -1667,7 +1701,8 @@ export default function Cart() {
                     name="customer_phone"
                     value={customerPhone}
                     onChange={updateCheckoutField}
-                    readOnly={isLoggedIn}
+                    readOnly={Boolean(userPhone)}
+                    autoComplete="tel"
                     maxLength="10"
                     title={phoneError}
                   />

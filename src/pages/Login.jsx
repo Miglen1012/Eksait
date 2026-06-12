@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import {
   apiRequest,
+  fetchCurrentUser,
+  getAuthUserFromResponse,
   getCartSessionId,
   getTokenFromResponse,
   handleApiErrorByStatus,
   normalizeErrors,
   setAuthToken,
+  storeAuthUser,
 } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
-import { consumeAuthReturnPath } from "../utils/authRedirect";
+import { consumeAuthReturnPath, navigateToAppPath } from "../utils/authRedirect";
 import { useLanguage } from "../utils/language";
 import "../styles/auth.css";
 
@@ -90,8 +93,17 @@ export default function Login() {
         setAuthToken(token, { remember: payload.remember });
       }
 
-      await apiRequest("/api/me");
-      window.location.href = consumeAuthReturnPath("/");
+      const user = getAuthUserFromResponse(data);
+
+      if (user) {
+        storeAuthUser(user, { remember: payload.remember });
+      } else {
+        fetchCurrentUser().catch(() => null);
+      }
+
+      window.dispatchEvent(new Event("auth:changed"));
+      window.dispatchEvent(new Event("cart:changed"));
+      navigateToAppPath(consumeAuthReturnPath("/"));
     } catch (error) {
       handleApiErrorByStatus(error, {
         fallbackRetryAfterSeconds: LOGIN_LOCK_SECONDS,

@@ -77,6 +77,28 @@ h6 {
   letter-spacing: 0;
 }
 
+.page-loading {
+  min-height: 52vh;
+  display: grid;
+  place-items: center;
+}
+
+.page-loading::before {
+  content: "";
+  width: 42px;
+  height: 42px;
+  border: 3px solid rgba(17, 24, 39, 0.12);
+  border-top-color: var(--red);
+  border-radius: 999px;
+  animation: page-loading-spin 0.75s linear infinite;
+}
+
+@keyframes page-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .container {
   width: min(1180px, calc(100% - 40px));
   margin: 0 auto;

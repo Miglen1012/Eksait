@@ -1,25 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "./App.css";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
 import ScrollToTopButton from "./components/layout/ScrollToTopButton";
 import CartDrawer from "./components/layout/CartDrawer";
-import AboutUs from "./pages/AboutUs";
-import Terms from "./pages/Terms";
-import HomePage from "./pages/HomePage";
-import Contact from "./pages/Contact";
-import Cart from "./pages/Cart";
-import CheckoutResult from "./pages/CheckoutResult";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import ForgotPassword from "./pages/ForgotPassword";
-import ResetPassword from "./pages/ResetPassword";
-import Orders from "./pages/Orders";
-import CategoryPage from "./pages/CategoryPage";
-import ProductShow from "./pages/ProductShow";
-import SearchResults from "./pages/SearchResults";
-import Equipment from "./pages/Equipment";
 import { isAuthRoute, storeAuthReturnPath } from "./utils/authRedirect";
+
+const AboutUs = lazy(() => import("./pages/AboutUs"));
+const Terms = lazy(() => import("./pages/Terms"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Cart = lazy(() => import("./pages/Cart"));
+const CheckoutResult = lazy(() => import("./pages/CheckoutResult"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const Orders = lazy(() => import("./pages/Orders"));
+const CategoryPage = lazy(() => import("./pages/CategoryPage"));
+const ProductShow = lazy(() => import("./pages/ProductShow"));
+const SearchResults = lazy(() => import("./pages/SearchResults"));
+const Equipment = lazy(() => import("./pages/Equipment"));
 
 function getCurrentPage(path) {
   if (path === "/about") {
@@ -216,7 +217,9 @@ export default function App() {
   return (
     <div className="site-shell">
       <Header />
-      {getCurrentPage(path)}
+      <Suspense fallback={<main className="page-loading" aria-busy="true" />}>
+        {getCurrentPage(path)}
+      </Suspense>
       <Footer />
       <ScrollToTopButton />
       <CartDrawer />

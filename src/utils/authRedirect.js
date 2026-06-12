@@ -38,3 +38,10 @@ export function consumeAuthReturnPath(fallbackPath = "/") {
   clearAuthReturnPath();
   return storedPath || fallbackPath;
 }
+
+export function navigateToAppPath(path) {
+  const nextPath = normalizePath(path) || "/";
+
+  window.history.pushState({ __appScrollState: true, scrollY: 0 }, "", nextPath);
+  window.dispatchEvent(new Event("app:navigate"));
+}

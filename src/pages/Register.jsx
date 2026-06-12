@@ -1,7 +1,18 @@
 import { useState } from "react";
-import { apiRequest, getCartSessionId, getFieldErrors, getTokenFromResponse, handleApiErrorByStatus, normalizeErrors, setAuthToken } from "../api/client";
+import {
+  apiRequest,
+  fetchCurrentUser,
+  getAuthUserFromResponse,
+  getCartSessionId,
+  getFieldErrors,
+  getTokenFromResponse,
+  handleApiErrorByStatus,
+  normalizeErrors,
+  setAuthToken,
+  storeAuthUser,
+} from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
-import { consumeAuthReturnPath } from "../utils/authRedirect";
+import { consumeAuthReturnPath, navigateToAppPath } from "../utils/authRedirect";
 import { useLanguage } from "../utils/language";
 import { isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/auth.css";
@@ -90,7 +101,17 @@ export default function Register() {
         setAuthToken(token);
       }
 
-      window.location.href = consumeAuthReturnPath("/");
+      const user = getAuthUserFromResponse(data);
+
+      if (user) {
+        storeAuthUser(user);
+      } else {
+        fetchCurrentUser().catch(() => null);
+      }
+
+      window.dispatchEvent(new Event("auth:changed"));
+      window.dispatchEvent(new Event("cart:changed"));
+      navigateToAppPath(consumeAuthReturnPath("/"));
     } catch (error) {
       handleApiErrorByStatus(error, {
         on422: () => {

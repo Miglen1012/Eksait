@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { apiRequest, getAuthToken, getFieldErrors, handleApiErrorByStatus, normalizeErrors } from "../api/client";
+import {
+  apiRequest,
+  fetchCurrentUser,
+  getAuthToken,
+  getCachedAuthUser,
+  getFieldErrors,
+  handleApiErrorByStatus,
+  normalizeErrors,
+} from "../api/client";
 import { useLanguage } from "../utils/language";
 import "../styles/contact.css";
 
@@ -146,10 +154,6 @@ function interpolate(text, values = {}) {
   ));
 }
 
-function getUserFromResponse(data) {
-  return data?.user || data?.data || data || null;
-}
-
 function getUserContactFields(user) {
   return {
     name: user?.name || user?.full_name || "",
@@ -161,13 +165,20 @@ function getUserContactFields(user) {
 export default function Contact() {
   const { language } = useLanguage();
   const copy = contactCopy[language] || contactCopy.bg;
+  const cachedUser = getCachedAuthUser();
+  const cachedContactFields = getUserContactFields(cachedUser);
   const [messages, setMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [retryIn, setRetryIn] = useState(0);
-  const [isAuthenticatedContact, setIsAuthenticatedContact] = useState(false);
-  const [formValues, setFormValues] = useState(INITIAL_FORM);
+  const [isAuthenticatedContact, setIsAuthenticatedContact] = useState(Boolean(cachedUser));
+  const [formValues, setFormValues] = useState(() => ({
+    ...INITIAL_FORM,
+    name: cachedContactFields.name,
+    email: cachedContactFields.email,
+    phone: cachedContactFields.phone,
+  }));
 
   useEffect(() => {
     setMessages([]);
@@ -210,9 +221,30 @@ export default function Contact() {
         return;
       }
 
+      const cachedUser = getCachedAuthUser();
+
+      if (cachedUser && isMounted) {
+        const nextFields = getUserContactFields(cachedUser);
+
+        setIsAuthenticatedContact(true);
+        setFormValues((current) => ({
+          ...current,
+          name: nextFields.name || current.name,
+          email: nextFields.email || current.email,
+          phone: nextFields.phone || current.phone,
+        }));
+      }
+
       try {
-        const data = await apiRequest("/api/me");
-        const user = getUserFromResponse(data);
+        const user = await fetchCurrentUser();
+
+        if (!user) {
+          if (isMounted) {
+            setIsAuthenticatedContact(false);
+          }
+          return;
+        }
+
         const nextFields = getUserContactFields(user);
 
         if (isMounted) {

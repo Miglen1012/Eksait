@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { apiRequest, clearAuthToken, getAuthToken } from "../../api/client";
+import { apiRequest, clearAuthToken, fetchCurrentUser, getAuthToken, getCachedAuthUser } from "../../api/client";
 import { fetchEquipmentProducts } from "../../api/equipment";
 import { searchProducts } from "../../api/products";
 import { categories } from "../../data/categories";
@@ -17,10 +17,6 @@ const navItems = [
   { key: "equipment", labelKey: "nav.equipment", href: "/equipment" },
   { key: "contact", labelKey: "nav.contact", href: "/contact" },
 ];
-
-function getUserFromResponse(data) {
-  return data?.user || data?.data || data;
-}
 
 function getUserName(user) {
   return user?.name || user?.full_name || user?.email || "";
@@ -115,7 +111,7 @@ function ToolsNavItem({ currentPath, isOpen, isSuppressed, menuRef, onClearSuppr
 
 export default function Header() {
   const { language: activeLanguage, t } = useLanguage();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => getCachedAuthUser());
   const [cartCount, setCartCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -142,13 +138,22 @@ export default function Header() {
 
     async function loadUser() {
       if (!getAuthToken()) {
+        if (isMounted) {
+          setUser(null);
+        }
         return;
       }
 
+      const cachedUser = getCachedAuthUser();
+
+      if (cachedUser && isMounted) {
+        setUser(cachedUser);
+      }
+
       try {
-        const data = await apiRequest("/api/me");
+        const user = await fetchCurrentUser();
         if (isMounted) {
-          setUser(getUserFromResponse(data));
+          setUser(user);
         }
       } catch {
         clearAuthToken();
@@ -173,7 +178,7 @@ export default function Header() {
 
     async function loadEquipmentAvailability() {
       try {
-        const equipmentProducts = await fetchEquipmentProducts({ force: true, language: activeLanguage });
+        const equipmentProducts = await fetchEquipmentProducts({ language: activeLanguage });
         if (isMounted) {
           setHasEquipmentProducts(equipmentProducts.length > 0);
         }
@@ -192,11 +197,18 @@ export default function Header() {
       loadCartCount();
     }
 
+    function handleAuthChanged() {
+      loadUser();
+      loadCartCount();
+    }
+
     window.addEventListener("cart:changed", handleCartChanged);
+    window.addEventListener("auth:changed", handleAuthChanged);
 
     return () => {
       isMounted = false;
       window.removeEventListener("cart:changed", handleCartChanged);
+      window.removeEventListener("auth:changed", handleAuthChanged);
     };
   }, [activeLanguage]);
 
@@ -288,6 +300,8 @@ export default function Header() {
     } finally {
       clearAuthToken();
       setUser(null);
+      window.dispatchEvent(new Event("auth:changed"));
+      window.dispatchEvent(new Event("cart:changed"));
       navigateTo("/login");
     }
   }

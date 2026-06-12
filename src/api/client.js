@@ -1,17 +1,39 @@
 import { storeAuthReturnPath } from "../utils/authRedirect";
 import { getStoredLanguage, translate } from "../utils/language";
 
-const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000")
-  .split(",")[0]
-  .trim()
-  .replace(/\/$/, "") || "http://localhost:8000";
+function normalizeApiBaseUrl(value) {
+  return String(value || "")
+    .split(",")[0]
+    .trim()
+    .replace(/\/$/, "");
+}
+
+function getDefaultApiBaseUrl() {
+  if (globalThis.location?.hostname === "test.eksait.com") {
+    return "https://admin.test.eksait.com";
+  }
+
+  return "http://localhost:8000";
+}
+
+const configuredApiUrl = normalizeApiBaseUrl(import.meta.env.VITE_API_URL);
+const runtimeOrigin = normalizeApiBaseUrl(globalThis.location?.origin);
+const API_URL = (
+  configuredApiUrl === runtimeOrigin && globalThis.location?.hostname === "test.eksait.com"
+    ? "https://admin.test.eksait.com"
+    : configuredApiUrl
+) || getDefaultApiBaseUrl();
 const CART_SESSION_KEY = "cart_session_id";
 const LEGACY_CART_SESSION_KEY = "excompany_cart_session_id";
 const AUTH_TOKEN_KEY = "auth_token";
+const AUTH_USER_CACHE_KEY = "auth_user";
+const AUTH_USER_CACHE_TTL_MS = 30 * 60 * 1000;
 const CART_SESSION_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
 const DEFAULT_ERROR_KEY = "error.default";
 const CONNECTION_ERROR_KEY = "error.connection";
+let currentUserPromise = null;
+let currentUserMemoryCache = null;
 
 function getDefaultErrorMessage() {
   return translate(DEFAULT_ERROR_KEY);
@@ -72,9 +94,148 @@ export function setAuthToken(token, { remember = true } = {}) {
   }
 }
 
+function clearAuthUserCache() {
+  currentUserPromise = null;
+  currentUserMemoryCache = null;
+  localStorage.removeItem(AUTH_USER_CACHE_KEY);
+  sessionStorage.removeItem(AUTH_USER_CACHE_KEY);
+}
+
 export function clearAuthToken() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  clearAuthUserCache();
+}
+
+function getCurrentAuthStorage() {
+  if (localStorage.getItem(AUTH_TOKEN_KEY)) {
+    return localStorage;
+  }
+
+  if (sessionStorage.getItem(AUTH_TOKEN_KEY)) {
+    return sessionStorage;
+  }
+
+  return localStorage;
+}
+
+function isUsableUser(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function hasUserIdentity(value) {
+  return Boolean(
+    value?.id ||
+    value?.email ||
+    value?.name ||
+    value?.full_name ||
+    value?.phone ||
+    value?.customer_email ||
+    value?.customer_phone,
+  );
+}
+
+export function getAuthUserFromResponse(data) {
+  return [
+    data?.user,
+    data?.data?.user,
+    data?.customer,
+    data?.data?.customer,
+    data?.data,
+    data,
+  ].find((candidate) => isUsableUser(candidate) && hasUserIdentity(candidate)) || null;
+}
+
+export function getCachedAuthUser() {
+  const token = getAuthToken();
+
+  if (!token) {
+    return null;
+  }
+
+  if (
+    currentUserMemoryCache?.token === token &&
+    Date.now() - currentUserMemoryCache.cachedAt < AUTH_USER_CACHE_TTL_MS &&
+    isUsableUser(currentUserMemoryCache.user)
+  ) {
+    return currentUserMemoryCache.user;
+  }
+
+  const cachedPayloads = [localStorage, sessionStorage].map((storage) => {
+    try {
+      return JSON.parse(storage.getItem(AUTH_USER_CACHE_KEY) || "null");
+    } catch {
+      return null;
+    }
+  });
+
+  const cachedPayload = cachedPayloads.find((payload) => (
+    payload?.token === token &&
+    Date.now() - Number(payload.cachedAt) < AUTH_USER_CACHE_TTL_MS &&
+    isUsableUser(payload.user)
+  ));
+
+  if (!cachedPayload) {
+    return null;
+  }
+
+  currentUserMemoryCache = cachedPayload;
+  return cachedPayload.user;
+}
+
+export function storeAuthUser(user, { remember } = {}) {
+  const token = getAuthToken();
+  const normalizedUser = getAuthUserFromResponse(user);
+
+  if (!token || !isUsableUser(normalizedUser)) {
+    return;
+  }
+
+  const payload = {
+    token,
+    user: normalizedUser,
+    cachedAt: Date.now(),
+  };
+  const storage = typeof remember === "boolean"
+    ? remember ? localStorage : sessionStorage
+    : getCurrentAuthStorage();
+
+  currentUserMemoryCache = payload;
+  storage.setItem(AUTH_USER_CACHE_KEY, JSON.stringify(payload));
+
+  if (storage === localStorage) {
+    sessionStorage.removeItem(AUTH_USER_CACHE_KEY);
+  } else {
+    localStorage.removeItem(AUTH_USER_CACHE_KEY);
+  }
+}
+
+export async function fetchCurrentUser({ force = false } = {}) {
+  if (!getAuthToken()) {
+    return null;
+  }
+
+  const cachedUser = force ? null : getCachedAuthUser();
+
+  if (cachedUser) {
+    return cachedUser;
+  }
+
+  if (currentUserPromise) {
+    return currentUserPromise;
+  }
+
+  currentUserPromise = apiRequest("/api/me")
+    .then((data) => {
+      const user = getAuthUserFromResponse(data);
+      storeAuthUser(user);
+      return user;
+    })
+    .finally(() => {
+      currentUserPromise = null;
+    });
+
+  return currentUserPromise;
 }
 
 function handleUnauthorizedResponse() {

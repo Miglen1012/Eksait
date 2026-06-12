@@ -2,12 +2,15 @@ import { useState } from "react";
 import { apiRequest, getCartSessionId, getFieldErrors, getTokenFromResponse, handleApiErrorByStatus, normalizeErrors, setAuthToken } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
 import { consumeAuthReturnPath } from "../utils/authRedirect";
-import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
+import { useLanguage } from "../utils/language";
+import { isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/auth.css";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Register() {
+  const { t } = useLanguage();
+  const phoneError = t("validation.phone");
   const [messages, setMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -28,36 +31,36 @@ export default function Register() {
     const nextFieldErrors = {};
 
     if (!name) {
-      validationErrors.push("Въведете име.");
-      nextFieldErrors.name = "Въведете име.";
+      validationErrors.push(t("form.nameRequired"));
+      nextFieldErrors.name = t("form.nameRequired");
     }
 
     if (!email) {
-      validationErrors.push("Въведете имейл адрес.");
-      nextFieldErrors.email = "Въведете имейл адрес.";
+      validationErrors.push(t("form.emailRequired"));
+      nextFieldErrors.email = t("form.emailRequired");
     } else if (!EMAIL_PATTERN.test(email)) {
-      validationErrors.push("Въведете валиден имейл адрес.");
-      nextFieldErrors.email = "Въведете валиден имейл адрес.";
+      validationErrors.push(t("form.emailInvalid"));
+      nextFieldErrors.email = t("form.emailInvalid");
     }
 
     if (!isValidPhone(phone, { required: true })) {
-      validationErrors.push(PHONE_ERROR);
-      nextFieldErrors.phone = PHONE_ERROR;
+      validationErrors.push(phoneError);
+      nextFieldErrors.phone = phoneError;
     }
 
     if (!password) {
-      validationErrors.push("Въведете парола.");
-      nextFieldErrors.password = "Въведете парола.";
+      validationErrors.push(t("form.passwordRequired"));
+      nextFieldErrors.password = t("form.passwordRequired");
     }
 
     if (!passwordConfirmation) {
-      validationErrors.push("Повторете паролата.");
-      nextFieldErrors.password_confirmation = "Повторете паролата.";
+      validationErrors.push(t("form.passwordConfirmRequired"));
+      nextFieldErrors.password_confirmation = t("form.passwordConfirmRequired");
     }
 
     if (password && passwordConfirmation && password !== passwordConfirmation) {
-      validationErrors.push("Паролите не съвпадат.");
-      nextFieldErrors.password_confirmation = "Паролите не съвпадат.";
+      validationErrors.push(t("form.passwordMismatch"));
+      nextFieldErrors.password_confirmation = t("form.passwordMismatch");
     }
 
     if (validationErrors.length > 0) {
@@ -101,7 +104,7 @@ export default function Register() {
           };
 
           setFieldErrors(nextErrors);
-          setMessages(fieldErrors.length > 0 ? [] : ["Моля, проверете въведените данни."]);
+          setMessages(fieldErrors.length > 0 ? [] : [t("form.checkInput")]);
         },
         onDefault: () => {
           setMessages(normalizeErrors(error));
@@ -116,19 +119,16 @@ export default function Register() {
     <main className="auth-page">
       <section className="auth-shell">
         <div className="auth-copy">
-          <span className="auth-kicker">Нов профил</span>
-          <h1>Регистрация</h1>
-          <p>
-            Създайте клиентски профил, за да поръчвате по-бързо и да пазите
-            основните си данни за бъдещи заявки.
-          </p>
+          <span className="auth-kicker">{t("auth.newAccount")}</span>
+          <h1>{t("auth.register")}</h1>
+          <p>{t("auth.registerLead")}</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <h2>Създаване на профил</h2>
+          <h2>{t("auth.createProfile")}</h2>
 
           <label>
-            Име
+            {t("auth.name")}
             <input
               type="text"
               name="name"
@@ -145,7 +145,7 @@ export default function Register() {
           </label>
 
           <label>
-            Имейл
+            {t("auth.email")}
             <input
               type="email"
               name="email"
@@ -162,13 +162,13 @@ export default function Register() {
           </label>
 
           <label>
-            Телефон
+            {t("form.phone")}
             <input
               type="tel"
               name="phone"
               autoComplete="tel"
               maxLength="10"
-              title={PHONE_ERROR}
+              title={phoneError}
               aria-invalid={fieldErrors.phone ? "true" : undefined}
               aria-describedby={fieldErrors.phone ? "register-phone-error" : undefined}
               onChange={() => {
@@ -181,7 +181,7 @@ export default function Register() {
           </label>
 
           <PasswordField
-            label="Парола"
+            label={t("auth.password")}
             name="password"
             autoComplete="new-password"
             error={fieldErrors.password}
@@ -193,7 +193,7 @@ export default function Register() {
           />
 
           <PasswordField
-            label="Повторете паролата"
+            label={t("auth.passwordConfirm")}
             name="password_confirmation"
             autoComplete="new-password"
             error={fieldErrors.password_confirmation}
@@ -213,11 +213,11 @@ export default function Register() {
           )}
 
           <button type="submit" disabled={submitting}>
-            {submitting ? "Регистрация..." : "Регистрация"}
+            {submitting ? t("auth.registering") : t("auth.register")}
           </button>
 
           <p className="auth-switch">
-            Вече имате профил? <a href="/login">Вписване</a>
+            {t("auth.accountExists")} <a href="/login">{t("auth.login")}</a>
           </p>
         </form>
       </section>

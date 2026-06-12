@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { apiRequest, handleApiErrorByStatus, normalizeErrors } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
+import { useLanguage } from "../utils/language";
 import "../styles/auth.css";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,6 +35,7 @@ function getFirstFieldError(error, field) {
 }
 
 export default function ResetPassword() {
+  const { t } = useLanguage();
   const [token] = useState(getResetTokenFromUrl);
   const [email, setEmail] = useState(getInitialEmailFromUrl);
   const [password, setPassword] = useState("");
@@ -77,25 +79,25 @@ export default function ResetPassword() {
     setSubmitting(true);
 
     if (!payload.token) {
-      nextMessages.push("Линкът за смяна на парола е невалиден или липсва token.");
+      nextMessages.push(t("reset.invalidToken"));
     }
 
     if (!payload.email) {
-      nextFieldErrors.email = "Въведете имейл адрес.";
+      nextFieldErrors.email = t("form.emailRequired");
     } else if (!EMAIL_PATTERN.test(payload.email)) {
-      nextFieldErrors.email = "Въведете валиден имейл адрес.";
+      nextFieldErrors.email = t("form.emailInvalid");
     }
 
     if (!payload.password) {
-      nextFieldErrors.password = "Въведете нова парола.";
+      nextFieldErrors.password = t("form.passwordNewRequired");
     } else if (payload.password.length < MIN_PASSWORD_LENGTH) {
-      nextFieldErrors.password = `Паролата трябва да е поне ${MIN_PASSWORD_LENGTH} символа.`;
+      nextFieldErrors.password = t("form.passwordMin", { min: MIN_PASSWORD_LENGTH });
     }
 
     if (!payload.password_confirmation) {
-      nextFieldErrors.password_confirmation = "Повторете новата парола.";
+      nextFieldErrors.password_confirmation = t("form.passwordResetConfirmRequired");
     } else if (payload.password && payload.password !== payload.password_confirmation) {
-      nextFieldErrors.password_confirmation = "Паролите не съвпадат.";
+      nextFieldErrors.password_confirmation = t("form.passwordMismatch");
     }
 
     if (Object.keys(nextFieldErrors).length > 0 || nextMessages.length > 0) {
@@ -113,7 +115,7 @@ export default function ResetPassword() {
 
       setPassword("");
       setPasswordConfirmation("");
-      setSuccessMessage("Паролата беше сменена успешно. Вече можете да влезете в профила си.");
+      setSuccessMessage(t("reset.success"));
     } catch (error) {
       handleApiErrorByStatus(error, {
         on422: () => {
@@ -128,7 +130,7 @@ export default function ResetPassword() {
           }, {});
 
           setFieldErrors(nextErrors);
-          setMessages(Object.keys(nextErrors).length > 0 ? [] : ["Моля, проверете данните и опитайте отново."]);
+          setMessages(Object.keys(nextErrors).length > 0 ? [] : [t("form.checkReset")]);
         },
         onDefault: () => {
           setMessages(normalizeErrors(error));
@@ -143,13 +145,13 @@ export default function ResetPassword() {
     <main className="auth-page">
       <section className="auth-shell">
         <div className="auth-copy">
-          <span className="auth-kicker">Профил</span>
-          <h1>Нова парола</h1>
-          <p>Задайте нова парола за профила си. Линкът е еднократен и трябва да се използва преди да изтече.</p>
+          <span className="auth-kicker">{t("auth.profile")}</span>
+          <h1>{t("auth.newPassword")}</h1>
+          <p>{t("auth.newPasswordLead")}</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <h2>Смяна на парола</h2>
+          <h2>{t("auth.resetPassword")}</h2>
 
           {successMessage && (
             <div className="auth-alert is-success">
@@ -166,7 +168,7 @@ export default function ResetPassword() {
           )}
 
           <label>
-            Имейл
+            {t("auth.email")}
             <input
               type="email"
               name="email"
@@ -180,7 +182,7 @@ export default function ResetPassword() {
           </label>
 
           <PasswordField
-            label="Нова парола"
+            label={t("auth.passwordNew")}
             name="password"
             autoComplete="new-password"
             value={password}
@@ -189,7 +191,7 @@ export default function ResetPassword() {
           />
 
           <PasswordField
-            label="Повторете новата парола"
+            label={t("auth.passwordConfirmNew")}
             name="password_confirmation"
             autoComplete="new-password"
             value={passwordConfirmation}
@@ -200,11 +202,11 @@ export default function ResetPassword() {
           {fieldErrors.token && <p className="auth-field-error">{fieldErrors.token}</p>}
 
           <button type="submit" disabled={submitting || Boolean(successMessage)}>
-            {submitting ? "Запазване..." : "Запази новата парола"}
+            {submitting ? t("auth.saving") : t("auth.saveNewPassword")}
           </button>
 
           <p className="auth-switch">
-            Вече имате достъп? <a href="/login">Към вписване</a>
+            {t("auth.accessRestored")} <a href="/login">{t("auth.backToLogin")}</a>
           </p>
         </form>
       </section>

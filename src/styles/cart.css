@@ -618,6 +618,15 @@
   cursor: default;
 }
 
+.checkout-field-hint {
+  margin-top: -2px;
+  color: #5f6b7a;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-transform: none;
+}
+
 .custom-select {
   position: relative;
   width: 100%;

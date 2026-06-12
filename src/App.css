@@ -223,6 +223,7 @@ h6 {
 .hero-media {
   position: absolute;
   inset: 0;
+  transform: translateZ(0);
 }
 
 .hero-image {
@@ -234,8 +235,10 @@ h6 {
   object-fit: cover;
   object-position: center;
   opacity: 0;
-  transform: scale(1.03);
-  transition: opacity 0.85s ease, transform 4.2s ease;
+  transform: scale(1.01);
+  backface-visibility: hidden;
+  will-change: opacity, transform;
+  transition: opacity 0.45s ease, transform 1.8s ease;
 }
 
 .hero-image.is-active {

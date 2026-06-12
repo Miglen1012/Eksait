@@ -2,8 +2,9 @@
 import { apiRequest, getApiBaseUrl, getAuthToken, getCartSessionId, normalizeErrors } from "../api/client";
 import { fetchProducts } from "../api/products";
 import { getCartItemsFromResponse, responseIncludesCartItems } from "../utils/cart";
+import { useLanguage } from "../utils/language";
 import { getPrimaryImage } from "../utils/products";
-import { PHONE_ERROR, isValidPhone, normalizePhone } from "../utils/validation";
+import { isValidPhone, normalizePhone } from "../utils/validation";
 import "../styles/cart.css";
 
 const initialCheckout = {
@@ -23,18 +24,17 @@ const initialCheckout = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const shippingMethodOptions = [
-  { value: "address", label: "До адрес" },
-  { value: "office", label: "До офис" },
-];
-const paymentMethodPlaceholder = { value: "", label: "--Изберете метод за плащане--", disabled: true };
 const fallbackPaymentMethods = [
-  { value: "cod", label: "Наложен платеж" },
-  { value: "bank_transfer", label: "Банков превод" },
+  { value: "cod", label: "cod" },
+  { value: "bank_transfer", label: "bank_transfer" },
 ];
-const cardPaymentMethodLabel = "Плащане с карта";
 const cartCachePrefix = "excompany_checkout_cart";
 const REMOVE_CONFIRM_DELAY_MS = 4000;
+const priceLocaleByLanguage = {
+  bg: "bg-BG",
+  en: "en-US",
+  de: "de-DE",
+};
 
 function resolveImageUrl(value) {
   const rawUrl = String(value || "").trim();
@@ -71,9 +71,9 @@ function buildProductLookup(products) {
   }, {});
 }
 
-async function fetchProductLookup() {
+async function fetchProductLookup(language) {
   try {
-    return buildProductLookup(await fetchProducts());
+    return buildProductLookup(await fetchProducts({ language }));
   } catch {
     return {};
   }
@@ -128,7 +128,7 @@ function normalizePaymentMethod(option) {
 
     return {
       value,
-      label: value === "stripe" ? cardPaymentMethodLabel : value,
+      label: value,
     };
   }
 
@@ -142,9 +142,7 @@ function normalizePaymentMethod(option) {
     return null;
   }
 
-  const label = value === "stripe"
-    ? cardPaymentMethodLabel
-    : String(option.label ?? option.name ?? option.title ?? "").trim() || value;
+  const label = String(option.label ?? option.name ?? option.title ?? "").trim() || value;
 
   return {
     ...option,
@@ -203,7 +201,7 @@ function getResolvedPaymentMethodsFromResponse(data) {
 
   if (stripeEnabled !== null) {
     return stripeEnabled
-      ? [...fallbackPaymentMethods, { value: "stripe", label: cardPaymentMethodLabel }]
+      ? [...fallbackPaymentMethods, { value: "stripe", label: "stripe" }]
       : fallbackPaymentMethods;
   }
 
@@ -439,6 +437,24 @@ function getUserEmail(user) {
   return user?.email || user?.customer_email || "";
 }
 
+function getPaymentMethodDisplayLabel(method, t) {
+  const value = String(method?.value ?? method ?? "");
+
+  if (value === "cod") {
+    return t("cart.cod");
+  }
+
+  if (value === "bank_transfer") {
+    return t("cart.bankTransfer");
+  }
+
+  if (value === "stripe") {
+    return t("cart.cardPayment");
+  }
+
+  return String(method?.label || value);
+}
+
 function CustomSelect({ disabled = false, name, onChange, options, placeholder, value }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectRef = useRef(null);
@@ -598,7 +614,7 @@ function getItemStock(item, catalogProduct, stockQuantity) {
   return true;
 }
 
-function normalizeCartItems(cartData, productLookup = {}) {
+function normalizeCartItems(cartData, productLookup = {}, t) {
   const items = getCartItemsFromResponse(cartData);
 
   return items.map((item) => {
@@ -606,6 +622,9 @@ function normalizeCartItems(cartData, productLookup = {}) {
     const productId = item.product_id || product.id || item.id;
     const variant = item.variant || {};
     const catalogProduct = productLookup[getLookupKey(productId)] || productLookup[productId];
+    const catalogVariant = catalogProduct?.variants?.find((catalogItemVariant) => (
+      String(catalogItemVariant.id) === String(item.product_variant_id ?? variant.id ?? "")
+    ));
     const quantity = Number(item.quantity || item.qty || 1);
     const price = Number(item.price || product.price || product.unit_price || catalogProduct?.price || 0);
     const stockQuantity = getStockQuantity(item, catalogProduct);
@@ -614,8 +633,8 @@ function normalizeCartItems(cartData, productLookup = {}) {
     return {
       id: productId,
       variantId: item.product_variant_id ?? variant.id ?? null,
-      variantSize: variant.size || item.variant_size || "",
-      name: product.name || item.name || catalogProduct?.name || `Продукт #${productId}`,
+      variantSize: catalogVariant?.size || variant.size || item.variant_size || "",
+      name: catalogProduct?.name || product.name || item.name || `${t("common.product")} #${productId}`,
       image: getItemImage(item, product, catalogProduct),
       quantity,
       price,
@@ -626,8 +645,8 @@ function normalizeCartItems(cartData, productLookup = {}) {
   });
 }
 
-function formatPrice(value) {
-  return new Intl.NumberFormat("bg-BG", {
+function formatPrice(value, language = "bg") {
+  return new Intl.NumberFormat(priceLocaleByLanguage[language] || priceLocaleByLanguage.bg, {
     style: "currency",
     currency: "EUR",
   }).format(Number(value || 0));
@@ -756,6 +775,7 @@ function writeCartCache(snapshot) {
 }
 
 export default function Cart() {
+  const { language, t } = useLanguage();
   const [cachedCart] = useState(() => readCartCache());
   const [items, setItems] = useState(() => cachedCart?.items || []);
   const [checkout, setCheckout] = useState(initialCheckout);
@@ -782,6 +802,13 @@ export default function Cart() {
   const customerName = isLoggedIn ? getUserName(user) : checkout.customer_name;
   const customerEmail = isLoggedIn ? getUserEmail(user) : checkout.customer_email;
   const customerPhone = isLoggedIn ? getUserPhone(user) : checkout.customer_phone;
+  const phoneError = t("validation.phone");
+  const shouldUseEnglishEcontCityInput = language === "de";
+  const cityInputPlaceholder = shouldUseEnglishEcontCityInput ? t("cart.cityEnglishPlaceholder") : "";
+  const shippingMethodOptions = useMemo(() => [
+    { value: "address", label: t("cart.deliveryAddress") },
+    { value: "office", label: t("cart.deliveryOffice") },
+  ], [t]);
 
   const itemsTotal = useMemo(
     () => items.reduce((total, item) => total + item.lineTotal, 0),
@@ -850,16 +877,16 @@ export default function Cart() {
     return nonApsOffices.length > 0 ? nonApsOffices : [...nonApsOffices, ...unknownTypeOffices];
   }, [offices, isApmDelivery]);
   const officePlaceholder = !checkout.shipping_city.trim()
-    ? "--Изберете град, за да се заредят офисите--"
+    ? t("cart.selectCityFirst")
     : officesLoading
-      ? "Зареждане..."
+      ? t("common.loading")
       : filteredOffices.length === 0
         ? isApmDelivery
-          ? "--Няма намерени еконтомати--"
-          : "--Няма намерени офиси--"
+          ? t("cart.noApms")
+          : t("cart.noOffices")
         : isApmDelivery
-          ? "--Изберете еконтомат--"
-          : "--Изберете офис--";
+          ? t("cart.selectApm")
+          : t("cart.selectOffice");
   const officeSelectDisabled = !checkout.shipping_city.trim() || officesLoading || filteredOffices.length === 0;
   const officeOptions = useMemo(
     () => [
@@ -877,10 +904,13 @@ export default function Cart() {
   );
   const paymentMethodOptions = useMemo(
     () => [
-      paymentMethodPlaceholder,
-      ...(paymentMethods.length > 0 ? paymentMethods : fallbackPaymentMethods),
+      { value: "", label: t("cart.paymentPlaceholder"), disabled: true },
+      ...(paymentMethods.length > 0 ? paymentMethods : fallbackPaymentMethods).map((method) => ({
+        ...method,
+        label: getPaymentMethodDisplayLabel(method, t),
+      })),
     ],
-    [paymentMethods],
+    [paymentMethods, t],
   );
   const selectedPaymentMethod = paymentMethodOptions.some((option) => String(option.value) === String(checkout.payment_method))
     ? checkout.payment_method
@@ -896,16 +926,19 @@ export default function Cart() {
   };
 
   const getProductLookup = useCallback(async () => {
-    if (!productLookupRef.current) {
-      productLookupRef.current = await fetchProductLookup();
+    if (productLookupRef.current?.language !== language) {
+      productLookupRef.current = {
+        language,
+        lookup: await fetchProductLookup(language),
+      };
     }
 
-    return productLookupRef.current;
-  }, []);
+    return productLookupRef.current.lookup;
+  }, [language]);
 
   const getProductLookupForCart = useCallback(async (cartData) => {
-    return cartNeedsProductLookup(cartData) ? await getProductLookup() : {};
-  }, [getProductLookup]);
+    return cartNeedsProductLookup(cartData) || language !== "bg" ? await getProductLookup() : {};
+  }, [getProductLookup, language]);
 
   const refreshPaymentMethods = useCallback(async () => {
     try {
@@ -922,7 +955,7 @@ export default function Cart() {
   async function syncCartItems() {
     const cartData = await apiRequest("/api/cart");
     const lookup = await getProductLookupForCart(cartData);
-    setItems(normalizeCartItems(cartData, lookup));
+    setItems(normalizeCartItems(cartData, lookup, t));
   }
 
   useEffect(() => {
@@ -937,7 +970,7 @@ export default function Cart() {
         const cartPaymentMethods = getResolvedPaymentMethodsFromResponse(cartData);
 
         if (!isCancelled) {
-          setItems(normalizeCartItems(cartData, lookup));
+          setItems(normalizeCartItems(cartData, lookup, t));
           if (cartPaymentMethods?.length > 0) {
             setPaymentMethods(cartPaymentMethods);
           }
@@ -958,20 +991,24 @@ export default function Cart() {
     return () => {
       isCancelled = true;
     };
-  }, [getProductLookupForCart]);
+  }, [getProductLookupForCart, t]);
 
   useEffect(() => {
     writeCartCache({ items, paymentMethods });
   }, [items, paymentMethods]);
 
   useEffect(() => {
-    refreshPaymentMethods();
+    function updatePaymentMethods() {
+      refreshPaymentMethods();
+    }
 
-    const intervalId = window.setInterval(refreshPaymentMethods, 3000);
+    window.queueMicrotask(updatePaymentMethods);
+
+    const intervalId = window.setInterval(updatePaymentMethods, 3000);
 
     function handleFocus() {
       if (document.visibilityState === "visible") {
-        refreshPaymentMethods();
+        updatePaymentMethods();
       }
     }
 
@@ -987,17 +1024,36 @@ export default function Cart() {
 
   useEffect(() => {
     if (!checkout.payment_method) {
-      return;
+      return undefined;
     }
 
     if (paymentMethodOptions.some((option) => String(option.value) === String(checkout.payment_method))) {
-      return;
+      return undefined;
     }
 
-    setCheckout((current) => ({
-      ...current,
-      payment_method: "",
-    }));
+    let isCancelled = false;
+    const stalePaymentMethod = checkout.payment_method;
+
+    window.queueMicrotask(() => {
+      if (isCancelled) {
+        return;
+      }
+
+      setCheckout((current) => {
+        if (current.payment_method !== stalePaymentMethod) {
+          return current;
+        }
+
+        return {
+          ...current,
+          payment_method: "",
+        };
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [paymentMethodOptions, checkout.payment_method]);
 
   useEffect(() => {
@@ -1047,7 +1103,8 @@ export default function Cart() {
       setOfficesLoading(true);
 
       try {
-        const data = await apiRequest(`/api/checkout/econt-offices?city=${encodeURIComponent(city)}`);
+        const languageParam = shouldUseEnglishEcontCityInput ? `&lang=${encodeURIComponent(language)}` : "";
+        const data = await apiRequest(`/api/checkout/econt-offices?city=${encodeURIComponent(city)}${languageParam}`);
 
         if (!isCancelled) {
           setOffices(normalizeOfficesResponse(data));
@@ -1068,7 +1125,7 @@ export default function Cart() {
     return () => {
       isCancelled = true;
     };
-  }, [needsOffice, checkout.shipping_city]);
+  }, [needsOffice, checkout.shipping_city, language, shouldUseEnglishEcontCityInput]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1095,6 +1152,7 @@ export default function Cart() {
 
       try {
         const payload = {
+          locale: language,
           shipping_method: activeShippingMethod,
           shipping_city: city,
           payment_method: selectedPaymentMethod,
@@ -1124,12 +1182,12 @@ export default function Cart() {
         const responseCost = getOfficeShippingCost(data) ?? getOfficeShippingCost(data?.data) ?? getOfficeShippingCost(data?.shipping);
         const fallbackCost = isOffice ? getOfficeShippingCost(selectedOffice) : null;
         setShippingCost(responseCost ?? fallbackCost);
-        setShippingCostError(responseCost === null && fallbackCost === null ? "Неуспешно изчисляване на доставка" : "");
+        setShippingCostError(responseCost === null && fallbackCost === null ? t("cart.shippingCalculationFailed") : "");
       } catch {
         if (!isCancelled) {
           const fallbackCost = isOffice ? getOfficeShippingCost(selectedOffice) : null;
           setShippingCost(fallbackCost);
-          setShippingCostError(fallbackCost === null ? "Неуспешно изчисляване на доставка" : "");
+          setShippingCostError(fallbackCost === null ? t("cart.shippingCalculationFailed") : "");
         }
       } finally {
         if (!isCancelled) {
@@ -1154,6 +1212,7 @@ export default function Cart() {
     selectedPaymentMethod,
     shippingCalculationItems,
     selectedOffice,
+    t,
   ]);
 
   function updateCheckoutField(event) {
@@ -1183,12 +1242,12 @@ export default function Cart() {
     const nextQuantity = Math.min(requestedQuantity, availableQuantity);
 
     if (availableQuantity <= 0) {
-      setMessages([`${cartItem?.name || "Продуктът"} вече не е наличен.`]);
+      setMessages([t("cart.unavailableItem", { name: cartItem?.name || t("common.product") })]);
       return;
     }
 
     if (requestedQuantity > availableQuantity) {
-      setMessages(["Не може да закупите повече."]);
+      setMessages([t("cart.tooManyGeneric")]);
     } else {
       setMessages([]);
     }
@@ -1210,7 +1269,7 @@ export default function Cart() {
 
       if (responseIncludesCartItems(data)) {
         const lookup = await getProductLookupForCart(data);
-        setItems(normalizeCartItems(data, lookup));
+        setItems(normalizeCartItems(data, lookup, t));
       } else {
         setItems((currentItems) => currentItems.map((item) => (
           item.id === productId && String(item.variantId || "") === String(variantId || "")
@@ -1245,7 +1304,7 @@ export default function Cart() {
 
       if (responseIncludesCartItems(data)) {
         const lookup = await getProductLookupForCart(data);
-        setItems(normalizeCartItems(data, lookup));
+        setItems(normalizeCartItems(data, lookup, t));
       } else {
         await syncCartItems();
       }
@@ -1332,7 +1391,7 @@ export default function Cart() {
       shipping_method: activeShippingMethod,
       shipping_city: checkout.shipping_city.trim(),
       payment_method: selectedPaymentMethod,
-      locale: "bg",
+      locale: language,
       notes: checkout.notes.trim(),
       items: checkoutItems,
     };
@@ -1357,63 +1416,63 @@ export default function Cart() {
     const normalizedCustomerPhone = normalizePhone(customerPhone);
 
     if (!customerName.trim()) {
-      errors.push("Въведете име и фамилия.");
+      errors.push(t("form.fullNameRequired"));
     }
 
     if (!customerEmail.trim()) {
-      errors.push("Въведете имейл адрес.");
+      errors.push(t("form.emailRequired"));
     } else if (!EMAIL_PATTERN.test(customerEmail.trim())) {
-      errors.push("Въведете валиден имейл адрес.");
+      errors.push(t("form.emailInvalid"));
     }
 
     if (!isValidPhone(normalizedCustomerPhone, { required: true })) {
-      errors.push(PHONE_ERROR);
+      errors.push(phoneError);
     }
 
     if (!checkout.shipping_city.trim()) {
-      errors.push("Въведете град за доставка.");
+      errors.push(t("cart.enterShippingCity"));
     }
 
     if (activeShippingMethod === "address") {
       if (!checkout.shipping_postcode.trim()) {
-        errors.push("Въведете пощенски код.");
+        errors.push(t("cart.enterPostcode"));
       }
 
       if (!checkout.shipping_address.trim()) {
-        errors.push("Въведете адрес за доставка.");
+        errors.push(t("cart.enterAddress"));
       }
     }
 
     if (needsOffice && !selectedOffice) {
-      errors.push("Изберете офис за доставка.");
+      errors.push(t("cart.selectOfficeRequired"));
     }
 
     if (!selectedPaymentMethod) {
-      errors.push("Изберете метод на плащане.");
+      errors.push(t("cart.selectPaymentRequired"));
     } else if (selectedPaymentMethod === "stripe" && !stripeEnabled) {
-      errors.push("Плащането с карта временно не е налично.");
+      errors.push(t("cart.cardPaymentUnavailable"));
     }
 
     items.forEach((item) => {
       const availableQuantity = getAvailableQuantity(item);
 
       if (availableQuantity <= 0) {
-        errors.push(`${item.name} вече не е наличен.`);
+        errors.push(t("cart.unavailableItem", { name: item.name }));
         return;
       }
 
       if (item.quantity > availableQuantity) {
-        errors.push(`Не може да закупите повече от ${item.name}.`);
+        errors.push(t("cart.tooManyItem", { name: item.name }));
       }
     });
 
     unpricedItems.forEach((item) => {
       const variantLabel = item.variantSize ? ` (${item.variantSize})` : "";
-      errors.push(`${item.name}${variantLabel} няма въведена цена и не може да бъде поръчан.`);
+      errors.push(t("cart.unpricedItem", { name: item.name, variant: variantLabel }));
     });
 
-    if (isLoggedIn && errors.includes(PHONE_ERROR)) {
-      errors.push("Телефонът е заключен към профила. Обновете данните в профила си преди поръчка.");
+    if (isLoggedIn && errors.includes(phoneError)) {
+      errors.push(t("cart.lockedPhone"));
     }
 
     return errors;
@@ -1449,7 +1508,7 @@ export default function Cart() {
         return;
       }
 
-      setMessages([data?.message || "Поръчката не беше завършена. Моля, опитайте отново."]);
+      setMessages([data?.message || t("cart.orderFailed")]);
     } catch (error) {
       setMessages(normalizeErrors(error));
       try {
@@ -1466,9 +1525,9 @@ export default function Cart() {
     <main className="cart-page">
       <section className="cart-shell">
         <header className="cart-header">
-          <span className="cart-kicker">Вашата поръчка</span>
-          <h1>Количка</h1>
-          <p>Прегледайте избраните продукти, въведете данни за доставка и завършете поръчката.</p>
+          <span className="cart-kicker">{t("cart.yourOrder")}</span>
+          <h1>{t("common.cart")}</h1>
+          <p>{t("cart.checkoutLead")}</p>
         </header>
 
         {messages.length > 0 && (
@@ -1479,7 +1538,7 @@ export default function Cart() {
 
         {loading ? (
           <div className="cart-empty">
-            <h2>Зареждане...</h2>
+            <h2>{t("common.loading")}</h2>
           </div>
         ) : items.length === 0 ? (
           <div className="cart-empty">
@@ -1490,15 +1549,15 @@ export default function Cart() {
                 <path d="M2 3h3l3 12h10l3-8H7" />
               </svg>
             </div>
-            <h2>Количката е празна</h2>
-            <p>След като добавите продукти, те ще се появят тук.</p>
-            <a className="cart-empty-link" href="/">Към началото</a>
+            <h2>{t("cart.emptyTitle")}</h2>
+            <p>{t("cart.emptyBody")}</p>
+            <a className="cart-empty-link" href="/">{t("cart.home")}</a>
           </div>
         ) : (
           <div className="cart-checkout-layout">
             <section className="cart-items-panel">
               <div className="cart-panel-heading">
-                <h2>Продукти</h2>
+                <h2>{t("cart.products")}</h2>
               </div>
 
               <div className="cart-items">
@@ -1511,11 +1570,11 @@ export default function Cart() {
                       <div>
                         <h3>{item.name}</h3>
                         {item.variantSize && <p className="cart-variant-note">{item.variantSize}</p>}
-                        <p>{formatPrice(item.price)} / бр.</p>
+                        <p>{formatPrice(item.price, language)} / {t("cart.unitEach")}</p>
                       </div>
                     </div>
 
-                    <div className="quantity-control" aria-label={`Количество за ${item.name}`}>
+                    <div className="quantity-control" aria-label={t("cart.quantityFor", { name: item.name })}>
                       <button
                         type="button"
                         onClick={() => updateQuantity(item.id, item.quantity - 1, item.variantId)}
@@ -1530,7 +1589,7 @@ export default function Cart() {
                         value={item.quantity}
                         onChange={(event) => updateQuantity(item.id, event.target.value, item.variantId)}
                         disabled={savingProductId === item.id || !item.stock}
-                        aria-label="Количество"
+                        aria-label={t("product.quantity")}
                       />
                       <button
                         type="button"
@@ -1541,14 +1600,14 @@ export default function Cart() {
                       </button>
                     </div>
 
-                    <strong>{formatPrice(item.lineTotal)}</strong>
+                    <strong>{formatPrice(item.lineTotal, language)}</strong>
                     <button
                       type="button"
                       className="cart-remove-button"
                       onClick={() => removeItem(item.id, item.variantId)}
                       disabled={savingProductId === item.id || Boolean(pendingRemovals[getCartLineKey(item.id, item.variantId)])}
-                      aria-label={`Премахни ${item.name} от количката`}
-                      title="Премахни продукта"
+                      aria-label={t("cart.itemRemove", { name: item.name })}
+                      title={t("cart.itemRemoveTitle")}
                     >
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M4 7h16" />
@@ -1562,14 +1621,14 @@ export default function Cart() {
                     {pendingRemovals[getCartLineKey(item.id, item.variantId)] && (
                       <div className="cart-remove-confirm" role="status" aria-live="polite">
                         <div>
-                          <p>Сигурни ли сте, че искате да премахнете продукта от количката?</p>
+                          <p>{t("cart.removeConfirm")}</p>
                           <span className="cart-remove-timer" aria-hidden="true" />
                         </div>
                         <button
                           type="button"
                           onClick={() => clearPendingRemoval(getCartLineKey(item.id, item.variantId))}
                         >
-                          Отмяна
+                          {t("cart.removeCancel")}
                         </button>
                       </div>
                     )}
@@ -1579,11 +1638,11 @@ export default function Cart() {
             </section>
 
             <form className="checkout-form" onSubmit={submitCheckout} noValidate>
-              <h2>Данни за поръчка</h2>
+              <h2>{t("cart.orderDetails")}</h2>
 
               <div className="checkout-grid">
                 <label>
-                  Име и фамилия
+                  {t("cart.fullName")}
                   <input
                     name="customer_name"
                     value={customerName}
@@ -1592,7 +1651,7 @@ export default function Cart() {
                   />
                 </label>
                 <label>
-                  Имейл
+                  {t("auth.email")}
                   <input
                     type="email"
                     name="customer_email"
@@ -1602,7 +1661,7 @@ export default function Cart() {
                   />
                 </label>
                 <label>
-                  Телефон
+                  {t("form.phone")}
                   <input
                     type="tel"
                     name="customer_phone"
@@ -1610,15 +1669,23 @@ export default function Cart() {
                     onChange={updateCheckoutField}
                     readOnly={isLoggedIn}
                     maxLength="10"
-                    title={PHONE_ERROR}
+                    title={phoneError}
                   />
                 </label>
                 <label>
-                  Град
-                  <input name="shipping_city" value={checkout.shipping_city} onChange={updateCheckoutField} />
+                  {t("cart.city")}
+                  <input
+                    name="shipping_city"
+                    value={checkout.shipping_city}
+                    onChange={updateCheckoutField}
+                    placeholder={cityInputPlaceholder}
+                  />
+                  {shouldUseEnglishEcontCityInput && (
+                    <small className="checkout-field-hint">{t("cart.cityEnglishHint")}</small>
+                  )}
                 </label>
                 <label>
-                  Метод на доставка
+                  {t("cart.deliveryMethod")}
                   <CustomSelect
                     name="shipping_method"
                     value={activeShippingMethod}
@@ -1630,11 +1697,11 @@ export default function Cart() {
                 {activeShippingMethod === "address" && (
                   <>
                     <label>
-                      Пощенски код
+                      {t("cart.postcode")}
                       <input name="shipping_postcode" value={checkout.shipping_postcode} onChange={updateCheckoutField} />
                     </label>
                     <label className="checkout-wide">
-                      Адрес за доставка
+                      {t("cart.address")}
                       <input name="shipping_address" value={checkout.shipping_address} onChange={updateCheckoutField} />
                     </label>
                   </>
@@ -1642,7 +1709,7 @@ export default function Cart() {
 
                 {needsOffice && (
                   <label>
-                    {isApmDelivery ? "Еконтомат" : "Офис"}
+                    {isApmDelivery ? t("cart.apm") : t("cart.office")}
                     <div className="office-picker">
                       <CustomSelect
                         name="econt_office_code"
@@ -1657,42 +1724,42 @@ export default function Cart() {
                 )}
 
                 <label className="checkout-wide">
-                  Метод на плащане
+                  {t("cart.paymentMethod")}
                   <CustomSelect
                     name="payment_method"
                     value={selectedPaymentMethod}
                     onChange={updateCheckoutField}
                     options={paymentMethodOptions}
-                    placeholder="--Изберете метод за плащане--"
+                    placeholder={t("cart.paymentPlaceholder")}
                   />
                 </label>
 
                 <label className="checkout-wide">
-                  Бележка
+                  {t("cart.note")}
                   <textarea name="notes" value={checkout.notes} onChange={updateCheckoutField} />
                 </label>
               </div>
 
               <div className="cart-summary">
-                <p><span>Продукти</span><strong>{formatPrice(itemsTotal)}</strong></p>
+                <p><span>{t("cart.products")}</span><strong>{formatPrice(itemsTotal, language)}</strong></p>
                 <p>
-                  <span>Доставка</span>
+                  <span>{t("cart.delivery")}</span>
                   <strong>
                     {shippingCostLoading
-                      ? "Изчисляване..."
+                      ? t("cart.loadingShipping")
                       : shippingCostError
                         ? shippingCostError
                       : shippingCost === null
-                        ? "Ще се изчисли при потвърждение"
-                        : formatPrice(shippingCost)}
+                        ? t("cart.shippingAtConfirmation")
+                        : formatPrice(shippingCost, language)}
                   </strong>
                 </p>
-                <p><span>Общо</span><strong>{formatPrice(grandTotal)}</strong></p>
+                <p><span>{t("cart.total")}</span><strong>{formatPrice(grandTotal, language)}</strong></p>
               </div>
 
               <div className="checkout-actions">
                 <button type="submit" disabled={submitting}>
-                  {submitting ? "Изпращане..." : "Завърши поръчката"}
+                  {submitting ? t("cart.submitOrder") : t("cart.completeOrder")}
                 </button>
               </div>
             </form>

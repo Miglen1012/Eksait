@@ -1,4 +1,5 @@
 import { storeAuthReturnPath } from "../utils/authRedirect";
+import { getStoredLanguage, translate } from "../utils/language";
 
 const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000")
   .split(",")[0]
@@ -9,8 +10,16 @@ const LEGACY_CART_SESSION_KEY = "excompany_cart_session_id";
 const AUTH_TOKEN_KEY = "auth_token";
 const CART_SESSION_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
-const DEFAULT_ERROR_MESSAGE = "Възникна проблем. Моля, опитайте отново.";
-const CONNECTION_ERROR_MESSAGE = "Няма връзка със сървъра. Моля, опитайте отново след малко.";
+const DEFAULT_ERROR_KEY = "error.default";
+const CONNECTION_ERROR_KEY = "error.connection";
+
+function getDefaultErrorMessage() {
+  return translate(DEFAULT_ERROR_KEY);
+}
+
+function getConnectionErrorMessage() {
+  return translate(CONNECTION_ERROR_KEY);
+}
 
 function createSessionId() {
   if (crypto.randomUUID) {
@@ -112,10 +121,13 @@ function storeCartSessionId(sessionId) {
 
 function buildHeaders() {
   const token = getAuthToken();
+  const language = getStoredLanguage();
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
+    "Accept-Language": language,
     "X-Cart-Session-Id": getCartSessionId(),
+    "X-Locale": language,
   };
 
   if (token) {
@@ -123,6 +135,18 @@ function buildHeaders() {
   }
 
   return headers;
+}
+
+export function withLanguageParam(path, language = getStoredLanguage()) {
+  const safeLanguage = ["bg", "en", "de"].includes(language) ? language : "bg";
+  const [pathnameAndSearch, hash = ""] = String(path || "").split("#");
+  const [pathname, rawSearch = ""] = pathnameAndSearch.split("?");
+  const search = new URLSearchParams(rawSearch);
+
+  search.set("lang", safeLanguage);
+
+  const nextSearch = search.toString();
+  return `${pathname}${nextSearch ? `?${nextSearch}` : ""}${hash ? `#${hash}` : ""}`;
 }
 
 async function parseResponse(response) {
@@ -144,7 +168,7 @@ async function parseResponse(response) {
       ? data.message
       : typeof data?.error === "string"
         ? data.error
-        : DEFAULT_ERROR_MESSAGE;
+        : getDefaultErrorMessage();
     const error = new Error(backendMessage);
     error.status = response.status;
     error.errors = data?.errors || null;
@@ -173,7 +197,7 @@ export async function apiRequest(path, options = {}) {
       throw error;
     }
 
-    throw error || new Error(CONNECTION_ERROR_MESSAGE);
+    throw error || new Error(getConnectionErrorMessage());
   }
 }
 
@@ -214,7 +238,7 @@ function collectMessages(value, messages = []) {
 
 export function normalizeErrors(error) {
   if (error?.message === "Failed to fetch") {
-    return [CONNECTION_ERROR_MESSAGE];
+    return [getConnectionErrorMessage()];
   }
 
   const messages = collectMessages([
@@ -227,10 +251,10 @@ export function normalizeErrors(error) {
   ]);
 
   const normalizedMessages = [...new Set(messages)].filter(Boolean).map((message) => (
-    message === "Request failed." ? DEFAULT_ERROR_MESSAGE : message
+    message === "Request failed." ? getDefaultErrorMessage() : message
   ));
 
-  return normalizedMessages.length > 0 ? normalizedMessages : [DEFAULT_ERROR_MESSAGE];
+  return normalizedMessages.length > 0 ? normalizedMessages : [getDefaultErrorMessage()];
 }
 
 export function getFieldErrors(error, fields = []) {

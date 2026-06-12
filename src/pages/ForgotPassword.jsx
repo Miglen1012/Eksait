@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { apiRequest, handleApiErrorByStatus, normalizeErrors } from "../api/client";
+import { useLanguage } from "../utils/language";
 import "../styles/auth.css";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RESET_RETRY_FALLBACK_SECONDS = 60;
-const RESET_REQUEST_SUCCESS_MESSAGE = "Ако има профил с този имейл, ще изпратим линк за смяна на паролата.";
 
 function getFirstFieldError(error, field) {
   return error?.errors?.[field]?.[0] || "";
 }
 
 export default function ForgotPassword() {
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [messages, setMessages] = useState([]);
@@ -46,9 +47,9 @@ export default function ForgotPassword() {
     setSubmitting(true);
 
     if (!nextEmail) {
-      nextFieldErrors.email = "Въведете имейл адрес.";
+      nextFieldErrors.email = t("form.emailRequired");
     } else if (!EMAIL_PATTERN.test(nextEmail)) {
-      nextFieldErrors.email = "Въведете валиден имейл адрес.";
+      nextFieldErrors.email = t("form.emailInvalid");
     }
 
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -63,7 +64,7 @@ export default function ForgotPassword() {
         body: JSON.stringify({ email: nextEmail }),
       });
 
-      setSuccessMessage(RESET_REQUEST_SUCCESS_MESSAGE);
+      setSuccessMessage(t("reset.requestSuccess"));
     } catch (error) {
       handleApiErrorByStatus(error, {
         fallbackRetryAfterSeconds: RESET_RETRY_FALLBACK_SECONDS,
@@ -73,12 +74,12 @@ export default function ForgotPassword() {
           if (emailError) {
             setFieldErrors({ email: emailError });
           } else {
-            setMessages(["Моля, проверете въведения имейл адрес."]);
+            setMessages([t("form.checkEmail")]);
           }
         },
         on429: (_, retryAfter) => {
           setRetryIn(retryAfter);
-          setMessages([`Опитайте отново след ${retryAfter} сек.`]);
+          setMessages([t("auth.loginRetryFormal", { seconds: retryAfter })]);
         },
         onDefault: () => {
           setMessages(normalizeErrors(error));
@@ -93,13 +94,13 @@ export default function ForgotPassword() {
     <main className="auth-page">
       <section className="auth-shell">
         <div className="auth-copy">
-          <span className="auth-kicker">Профил</span>
-          <h1>Забравена парола</h1>
-          <p>Въведете имейла към профила си и ще получите линк за задаване на нова парола.</p>
+          <span className="auth-kicker">{t("auth.forgotKicker")}</span>
+          <h1>{t("auth.forgotPassword")}</h1>
+          <p>{t("auth.forgotLead")}</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <h2>Възстановяване на достъп</h2>
+          <h2>{t("auth.recoverAccess")}</h2>
 
           {successMessage && (
             <div className="auth-alert is-success">
@@ -116,7 +117,7 @@ export default function ForgotPassword() {
           )}
 
           <label>
-            Имейл
+            {t("auth.email")}
             <input
               type="email"
               name="email"
@@ -133,11 +134,11 @@ export default function ForgotPassword() {
           </label>
 
           <button type="submit" disabled={submitting || retryIn > 0}>
-            {submitting ? "Изпращане..." : retryIn > 0 ? `Изчакайте ${retryIn} сек.` : "Изпрати линк"}
+            {submitting ? t("auth.sending") : retryIn > 0 ? t("auth.waitSeconds", { seconds: retryIn }) : t("auth.sendLink")}
           </button>
 
           <p className="auth-switch">
-            Спомнихте си паролата? <a href="/login">Вписване</a>
+            {t("auth.rememberedPassword")} <a href="/login">{t("auth.login")}</a>
           </p>
         </form>
       </section>

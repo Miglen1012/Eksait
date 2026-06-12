@@ -10,22 +10,6 @@
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.055);
 }
 
-.home-promo-images {
-  display: grid;
-  place-items: center;
-  width: min(720px, 100%);
-  margin: 0 auto;
-  padding: 10px 14px;
-  border: 1px solid #d7dce4;
-}
-
-.home-promo-images img {
-  width: min(100%, 640px);
-  max-height: 170px;
-  display: block;
-  object-fit: contain;
-}
-
 .home-brand-block {
   width: min(1120px, 100%);
   margin: clamp(26px, 4vw, 44px) auto 0;

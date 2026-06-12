@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLanguage } from "../../utils/language";
 
 function EyeIcon() {
   return (
@@ -29,6 +30,7 @@ export default function PasswordField({
   onChange,
   value,
 }) {
+  const { t } = useLanguage();
   const [isVisible, setIsVisible] = useState(false);
   const inputId = id || name;
   const errorId = error ? `${inputId}-error` : undefined;
@@ -51,7 +53,7 @@ export default function PasswordField({
           type="button"
           className="password-toggle"
           onClick={() => setIsVisible((current) => !current)}
-          aria-label={isVisible ? "Hide password" : "Show password"}
+          aria-label={isVisible ? t("auth.hidePassword") : t("auth.showPassword")}
         >
           {isVisible ? <EyeOffIcon /> : <EyeIcon />}
         </button>

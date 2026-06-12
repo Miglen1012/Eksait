@@ -9,12 +9,14 @@ import {
 } from "../api/client";
 import PasswordField from "../components/auth/PasswordField";
 import { consumeAuthReturnPath } from "../utils/authRedirect";
+import { useLanguage } from "../utils/language";
 import "../styles/auth.css";
 
 const LOGIN_LOCK_SECONDS = 60;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Login() {
+  const { t } = useLanguage();
   const [messages, setMessages] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -53,18 +55,21 @@ export default function Login() {
 
     const validationErrors = [];
     const nextFieldErrors = {};
+    const emailRequired = t("form.emailRequired");
+    const emailInvalid = t("form.emailInvalid");
+    const passwordRequired = t("form.passwordRequired");
 
     if (!payload.email) {
-      validationErrors.push("Въведете имейл адрес.");
-      nextFieldErrors.email = "Въведете имейл адрес.";
+      validationErrors.push(emailRequired);
+      nextFieldErrors.email = emailRequired;
     } else if (!EMAIL_PATTERN.test(payload.email)) {
-      validationErrors.push("Въведете валиден имейл адрес.");
-      nextFieldErrors.email = "Въведете валиден имейл адрес.";
+      validationErrors.push(emailInvalid);
+      nextFieldErrors.email = emailInvalid;
     }
 
     if (!payload.password) {
-      validationErrors.push("Въведете парола.");
-      nextFieldErrors.password = "Въведете парола.";
+      validationErrors.push(passwordRequired);
+      nextFieldErrors.password = passwordRequired;
     }
 
     if (validationErrors.length > 0) {
@@ -100,10 +105,10 @@ export default function Login() {
         },
         on429: (_, retryAfter) => {
           setRetryIn(retryAfter);
-          setMessages([`Опитайте отново след ${retryAfter} сек.`]);
+          setMessages([t("auth.loginRetryFormal", { seconds: retryAfter })]);
         },
         onDefault: () => {
-          setMessages(["Възникна грешка. Моля, опитайте отново."]);
+          setMessages([t("error.default")]);
         },
       });
     } finally {
@@ -117,13 +122,13 @@ export default function Login() {
     <main className="auth-page">
       <section className="auth-shell">
         <div className="auth-copy">
-          <span className="auth-kicker">Профил</span>
-          <h1>Вписване</h1>
-          <p>Влезте в профила си, за да преглеждате поръчки, данни за доставка и клиентски настройки.</p>
+          <span className="auth-kicker">{t("auth.profile")}</span>
+          <h1>{t("auth.login")}</h1>
+          <p>{t("auth.loginLead")}</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <h2>Вход в профила</h2>
+          <h2>{t("auth.loginFormTitle")}</h2>
 
           {messages.length > 0 && (
             <div className="auth-alert">
@@ -135,12 +140,12 @@ export default function Login() {
 
           {retryIn > 0 && (
             <div className="auth-alert">
-              <p>Опитай отново след {retryIn} сек.</p>
+              <p>{t("auth.loginRetry", { seconds: retryIn })}</p>
             </div>
           )}
 
           <label>
-            Имейл
+            {t("auth.email")}
             <input
               type="email"
               name="email"
@@ -157,7 +162,7 @@ export default function Login() {
           </label>
 
           <PasswordField
-            label="Парола"
+            label={t("auth.password")}
             name="password"
             autoComplete="current-password"
             error={fieldErrors.password}
@@ -171,17 +176,17 @@ export default function Login() {
           <div className="auth-row">
             <label className="auth-check">
               <input type="checkbox" name="remember" />
-              Запомни ме
+              {t("auth.rememberMe")}
             </label>
-            <a href="/forgot-password">Забравена парола?</a>
+            <a href="/forgot-password">{t("auth.forgotQuestion")}</a>
           </div>
 
           <button type="submit" disabled={isLoginDisabled}>
-            {submitting ? "Вписване..." : "Вписване"}
+            {submitting ? `${t("auth.login")}...` : t("auth.login")}
           </button>
 
           <p className="auth-switch">
-            Нямате профил? <a href="/register">Създайте регистрация</a>
+            {t("auth.noAccount")} <a href="/register">{t("auth.createAccount")}</a>
           </p>
         </form>
       </section>

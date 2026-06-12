@@ -3,22 +3,28 @@ import HeroSlider from "../components/home/HeroSlider";
 import { normalizeErrors } from "../api/client";
 import { fetchProducts, getCachedProducts } from "../api/products";
 import logo from "../assets/logo-widget.png";
-import promoImageMerged from "../assets/pics/Untitled-3.jpg";
+import { getCategoryBySlug, getCategoryTokens } from "../data/categories";
+import { useLanguage } from "../utils/language";
 import { normalizeSearchText } from "../utils/search";
 import "../styles/home.css";
 
 const HOME_CATEGORY_SECTIONS = [
-  { slug: "frezi", title: "Фрези", limit: 8, categoryNames: ["Фрези"] },
-  { slug: "plastini", title: "Пластини", limit: 8, categoryNames: ["Пластини"] },
-  { slug: "metchici", title: "Метчици", limit: 8, categoryNames: ["Метчици"] },
+  { slug: "frezi", titleKey: "category.frezi", limit: 8 },
+  { slug: "plastini", titleKey: "category.plastini", limit: 8 },
+  { slug: "metchici", titleKey: "category.metchici", limit: 8 },
 ];
 
 function getProductPath(product) {
   return `/products/${product.slug || product.id}`;
 }
 
-function productBelongsToSection(product, section) {
-  const sectionTokens = [section.slug, section.title, ...(section.categoryNames || [])]
+function productBelongsToSection(product, section, sectionTitle) {
+  const category = getCategoryBySlug(section.slug);
+  const sectionTokens = [
+    section.slug,
+    sectionTitle,
+    ...(category ? getCategoryTokens(category) : []),
+  ]
     .map((token) => normalizeSearchText(token))
     .filter(Boolean);
 
@@ -28,6 +34,10 @@ function productBelongsToSection(product, section) {
       category?.slug,
       category?.label,
       category?.title,
+      category?.category_name,
+      category?.categoryName,
+      category?.category_slug,
+      category?.categorySlug,
     ]
       .map((token) => normalizeSearchText(token))
       .filter(Boolean);
@@ -43,7 +53,9 @@ function productBelongsToSection(product, section) {
 }
 
 function HomeCategorySection({ section, products }) {
+  const { t } = useLanguage();
   const scrollerRef = useRef(null);
+  const sectionTitle = t(section.titleKey);
 
   function scrollProducts(direction) {
     const scroller = scrollerRef.current;
@@ -62,22 +74,22 @@ function HomeCategorySection({ section, products }) {
   }
 
   return (
-    <section className="home-category-section" aria-label={section.title}>
+    <section className="home-category-section" aria-label={sectionTitle}>
       <div className="home-category-header">
-        <h2>{section.title}</h2>
+        <h2>{sectionTitle}</h2>
       </div>
 
       {products.length === 0 ? (
-        <p className="home-empty-category">Няма налични продукти в тази категория.</p>
+        <p className="home-empty-category">{t("home.emptyCategory")}</p>
       ) : (
         <div className="home-carousel-wrap">
           {products.length > 1 ? (
             <>
               <div className="home-carousel-zone home-carousel-zone-left">
-                <button type="button" onClick={() => scrollProducts(-1)} aria-label={`Предишни ${section.title}`} />
+                <button type="button" onClick={() => scrollProducts(-1)} aria-label={t("home.prevCategory", { category: sectionTitle })} />
               </div>
               <div className="home-carousel-zone home-carousel-zone-right">
-                <button type="button" onClick={() => scrollProducts(1)} aria-label={`Следващи ${section.title}`} />
+                <button type="button" onClick={() => scrollProducts(1)} aria-label={t("home.nextCategory", { category: sectionTitle })} />
               </div>
             </>
           ) : null}
@@ -92,9 +104,9 @@ function HomeCategorySection({ section, products }) {
                     {product.image ? (
                       <img src={product.image} alt={product.name} loading="lazy" decoding="async" />
                     ) : (
-                      <span>Няма снимка</span>
+                      <span>{t("common.noImage")}</span>
                     )}
-                    <span className="home-product-more">Още</span>
+                    <span className="home-product-more">{t("home.more")}</span>
                   </a>
 
                   <div className="home-product-body">
@@ -113,21 +125,22 @@ function HomeCategorySection({ section, products }) {
 }
 
 export default function HomePage() {
-  const [products, setProducts] = useState(() => getCachedProducts() || []);
-  const [loading, setLoading] = useState(() => !getCachedProducts());
+  const { language, t } = useLanguage();
+  const [products, setProducts] = useState(() => getCachedProducts(language) || []);
+  const [loading, setLoading] = useState(() => !getCachedProducts(language));
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadProducts() {
-      if (!getCachedProducts()) {
+      if (!getCachedProducts(language)) {
         setLoading(true);
       }
       setMessages([]);
 
       try {
-        const nextProducts = await fetchProducts();
+        const nextProducts = await fetchProducts({ language });
 
         if (isMounted) {
           setProducts(nextProducts);
@@ -148,18 +161,19 @@ export default function HomePage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [language]);
 
   const productsBySection = useMemo(
     () =>
       HOME_CATEGORY_SECTIONS.map((section) => {
+        const sectionTitle = t(section.titleKey);
         const filtered = products
-          .filter((product) => productBelongsToSection(product, section))
+          .filter((product) => productBelongsToSection(product, section, sectionTitle))
           .slice(0, section.limit);
 
         return { section, products: filtered };
       }),
-    [products],
+    [products, t],
   );
 
   return (
@@ -167,11 +181,25 @@ export default function HomePage() {
       <HeroSlider />
 
       <div className="layout-container home-content-panel">
-        <section className="home-promo-images" aria-label="Акценти">
-          <img src={promoImageMerged} alt="Промо изображения" loading="lazy" decoding="async" />
-        </section>
+        {messages.length > 0 ? (
+          <div className="home-alert">
+            {messages.map((message) => (
+              <p key={message}>{message}</p>
+            ))}
+          </div>
+        ) : null}
 
-        <section className="home-brand-block" aria-label="За Ексайт Къмпани">
+        {loading ? <p className="home-loading">{t("home.loadingProducts")}</p> : null}
+
+        {!loading && messages.length === 0 ? (
+          <div className="home-categories">
+            {productsBySection.map(({ section, products: sectionProducts }) => (
+              <HomeCategorySection section={section} products={sectionProducts} key={section.slug} />
+            ))}
+          </div>
+        ) : null}
+
+        <section className="home-brand-block" aria-label={t("home.videoAria")}>
           <div className="home-brand-logo-wrap">
             <img src={logo} alt="Excite Company" decoding="async" />
           </div>
@@ -182,24 +210,6 @@ export default function HomePage() {
             </video>
           </div>
         </section>
-
-        {messages.length > 0 ? (
-          <div className="home-alert">
-            {messages.map((message) => (
-              <p key={message}>{message}</p>
-            ))}
-          </div>
-        ) : null}
-
-        {loading ? <p className="home-loading">Зареждане на продукти...</p> : null}
-
-        {!loading && messages.length === 0 ? (
-          <div className="home-categories">
-            {productsBySection.map(({ section, products: sectionProducts }) => (
-              <HomeCategorySection section={section} products={sectionProducts} key={section.slug} />
-            ))}
-          </div>
-        ) : null}
       </div>
     </main>
   );

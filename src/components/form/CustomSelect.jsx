@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLanguage } from "../../utils/language";
 
 export default function CustomSelect({
-  ariaLabel = "Избор",
+  ariaLabel,
   disabled = false,
   onChange,
   options = [],
   placeholder = "",
-  searchPlaceholder = "Търси...",
+  searchPlaceholder,
   searchThreshold = 8,
   value = "",
 }) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const selectRef = useRef(null);
+  const resolvedAriaLabel = ariaLabel || t("customSelect.defaultAria");
+  const resolvedSearchPlaceholder = searchPlaceholder || t("customSelect.searchPlaceholder");
   const shouldShowSearch = options.length >= searchThreshold;
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
@@ -80,22 +84,22 @@ export default function CustomSelect({
         disabled={disabled}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-label={ariaLabel}
+        aria-label={resolvedAriaLabel}
       >
         <span>{buttonLabel}</span>
         <span className="custom-select-chevron" aria-hidden="true" />
       </button>
 
       {isOpen && (
-        <div className="custom-select-menu" role="listbox" aria-label={ariaLabel}>
+        <div className="custom-select-menu" role="listbox" aria-label={resolvedAriaLabel}>
           {shouldShowSearch && (
             <div className="custom-select-search">
               <input
                 type="search"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={searchPlaceholder}
-                aria-label={`${ariaLabel} - търсене`}
+                placeholder={resolvedSearchPlaceholder}
+                aria-label={t("customSelect.searchAria", { label: resolvedAriaLabel })}
                 autoFocus
               />
             </div>
@@ -114,7 +118,7 @@ export default function CustomSelect({
               {option.label}
             </button>
           )) : (
-            <span className="custom-select-empty">Няма намерени резултати</span>
+            <span className="custom-select-empty">{t("customSelect.empty")}</span>
           )}
         </div>
       )}

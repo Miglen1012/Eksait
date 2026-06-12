@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, apiRequest, getAuthToken, normalizeErrors } from "../api/client";
+import { useLanguage } from "../utils/language";
 import "../styles/cart.css";
 
 function getRawOrders(data) {
@@ -40,14 +41,20 @@ function normalizeOrders(data) {
   });
 }
 
-function formatPrice(value) {
-  return new Intl.NumberFormat("bg-BG", {
+const localeByLanguage = {
+  bg: "bg-BG",
+  en: "en-US",
+  de: "de-DE",
+};
+
+function formatPrice(value, language) {
+  return new Intl.NumberFormat(localeByLanguage[language] || localeByLanguage.bg, {
     style: "currency",
     currency: "EUR",
   }).format(Number(value || 0));
 }
 
-function formatDate(value) {
+function formatDate(value, language) {
   if (!value) {
     return "";
   }
@@ -58,14 +65,14 @@ function formatDate(value) {
     return "";
   }
 
-  return new Intl.DateTimeFormat("bg-BG", {
+  return new Intl.DateTimeFormat(localeByLanguage[language] || localeByLanguage.bg, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   }).format(date);
 }
 
-function formatTime(value) {
+function formatTime(value, language) {
   if (!value) {
     return "";
   }
@@ -76,7 +83,7 @@ function formatTime(value) {
     return "";
   }
 
-  return new Intl.DateTimeFormat("bg-BG", {
+  return new Intl.DateTimeFormat(localeByLanguage[language] || localeByLanguage.bg, {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
@@ -122,12 +129,12 @@ function getOrderItemImage(item) {
   );
 }
 
-function getDeliveryDetails(order) {
+function getDeliveryDetails(order, t) {
   const city = order.shippingCity;
-  const method = getShippingLabel(order.shippingMethod);
+  const method = getShippingLabel(order.shippingMethod, t);
 
   if (order.shippingMethod === "office") {
-    const office = order.officeName || order.officeAddress || (order.officeCode ? `Офис ${order.officeCode}` : "");
+    const office = order.officeName || order.officeAddress || (order.officeCode ? `${t("cart.office")} ${order.officeCode}` : "");
 
     return [method, office, city].filter(Boolean).join(", ");
   }
@@ -141,40 +148,41 @@ function getDeliveryDetails(order) {
   return addressParts.length > 0 ? `${method}: ${addressParts.join(", ")}` : method;
 }
 
-function getStatusLabel(status) {
+function getStatusLabel(status, t) {
   const labels = {
-    pending: "Очаква обработка",
-    processing: "Обработва се",
-    completed: "Завършена",
-    cancelled: "Отказана",
-    canceled: "Отказана",
-    paid: "Платена",
-    shipped: "Изпратена",
+    pending: t("status.pending"),
+    processing: t("status.processing"),
+    completed: t("status.completed"),
+    cancelled: t("status.cancelled"),
+    canceled: t("status.cancelled"),
+    paid: t("status.paid"),
+    shipped: t("status.shipped"),
   };
 
   return labels[String(status).toLowerCase()] || status;
 }
 
-function getPaymentLabel(method) {
+function getPaymentLabel(method, t) {
   const labels = {
-    stripe: "Карта",
-    cod: "Наложен платеж",
-    bank_transfer: "Банков превод",
+    stripe: t("cart.cardPayment"),
+    cod: t("cart.cod"),
+    bank_transfer: t("cart.bankTransfer"),
   };
 
-  return labels[method] || method || "Не е посочен";
+  return labels[method] || method || t("common.notSpecified");
 }
 
-function getShippingLabel(method) {
+function getShippingLabel(method, t) {
   const labels = {
-    address: "До адрес",
-    office: "До офис",
+    address: t("cart.deliveryAddress"),
+    office: t("cart.deliveryOffice"),
   };
 
-  return labels[method] || method || "Не е посочен";
+  return labels[method] || method || t("common.notSpecified");
 }
 
 export default function Orders() {
+  const { language, t } = useLanguage();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(Boolean(getAuthToken()));
   const [messages, setMessages] = useState([]);
@@ -221,10 +229,10 @@ export default function Orders() {
       <main className="cart-page">
         <section className="cart-shell">
           <div className="cart-result">
-            <span className="cart-kicker">Профил</span>
-            <h1>Влезте в профила си</h1>
-            <p>Трябва да сте вписани, за да видите историята на поръчките си.</p>
-            <a href="/login" className="cart-empty-link">Към вход</a>
+            <span className="cart-kicker">{t("orders.profile")}</span>
+            <h1>{t("orders.loginTitle")}</h1>
+            <p>{t("orders.loginBody")}</p>
+            <a href="/login" className="cart-empty-link">{t("orders.goLogin")}</a>
           </div>
         </section>
       </main>
@@ -235,9 +243,9 @@ export default function Orders() {
     <main className="cart-page">
       <section className="cart-shell">
         <header className="cart-header">
-          <span className="cart-kicker">Профил</span>
-          <h1>Моите поръчки</h1>
-          <p>Преглед на направените поръчки и техния текущ статус.</p>
+          <span className="cart-kicker">{t("orders.profile")}</span>
+          <h1>{t("orders.title")}</h1>
+          <p>{t("orders.subtitle")}</p>
         </header>
 
         {messages.length > 0 && (
@@ -248,13 +256,13 @@ export default function Orders() {
 
         {loading ? (
           <div className="cart-empty">
-            <h2>Зареждане...</h2>
+            <h2>{t("common.loading")}</h2>
           </div>
         ) : orders.length === 0 ? (
           <div className="cart-empty">
-            <h2>Все още няма поръчки</h2>
-            <p>Когато направите поръчка, тя ще се появи тук.</p>
-            <a href="/cart" className="cart-empty-link">Към количката</a>
+            <h2>{t("orders.emptyTitle")}</h2>
+            <p>{t("orders.emptyBody")}</p>
+            <a href="/cart" className="cart-empty-link">{t("orders.goCart")}</a>
           </div>
         ) : (
           <div className="orders-list">
@@ -262,31 +270,31 @@ export default function Orders() {
               <article className="order-card" key={order.id}>
                 <div className="order-card-header">
                   <div>
-                    <span>Поръчка</span>
+                    <span>{t("orders.order")}</span>
                     <h2>#{order.number}</h2>
                   </div>
                   <div className="order-card-side">
-                    {formatDate(order.createdAt) && (
+                    {formatDate(order.createdAt, language) && (
                       <p className="order-card-date">
-                        <span>Дата и час</span>
-                        {formatDate(order.createdAt)}{formatTime(order.createdAt) ? `, ${formatTime(order.createdAt)}` : ""}
+                        <span>{t("orders.dateTime")}</span>
+                        {formatDate(order.createdAt, language)}{formatTime(order.createdAt, language) ? `, ${formatTime(order.createdAt, language)}` : ""}
                       </p>
                     )}
-                    <strong>{order.statusLabel || getStatusLabel(order.status)}</strong>
+                    <strong>{order.statusLabel || getStatusLabel(order.status, t)}</strong>
                   </div>
                 </div>
 
                 <div className="order-card-meta">
-                  <p><span>Плащане</span>{getPaymentLabel(order.paymentMethod)}</p>
-                  <p className="order-delivery-detail"><span>Доставка</span>{getDeliveryDetails(order)}</p>
-                  <p><span>Общо</span>{formatPrice(order.total)}</p>
+                  <p><span>{t("orders.payment")}</span>{getPaymentLabel(order.paymentMethod, t)}</p>
+                  <p className="order-delivery-detail"><span>{t("cart.delivery")}</span>{getDeliveryDetails(order, t)}</p>
+                  <p><span>{t("cart.total")}</span>{formatPrice(order.total, language)}</p>
                 </div>
 
                 {order.items.length > 0 && (
                   <div className="order-items">
                     {order.items.map((item, index) => {
                       const product = item.product || item;
-                      const name = item.product_name || product.name || item.name || `Продукт #${item.product_id || product.id || index + 1}`;
+                      const name = item.product_name || product.name || item.name || `${t("common.product")} #${item.product_id || product.id || index + 1}`;
                       const quantity = item.quantity || item.qty || 1;
                       const image = getOrderItemImage(item);
 

@@ -1,5 +1,6 @@
 import CustomSelect from "../form/CustomSelect";
 import { DEFAULT_PRODUCT_PAGE_SIZE, PRODUCT_PAGE_SIZE_OPTIONS } from "../../utils/pagination";
+import { useLanguage } from "../../utils/language";
 
 function getPaginationItems(currentPage, totalPages) {
   if (totalPages <= 7) {
@@ -38,11 +39,13 @@ const pageSizeOptions = PRODUCT_PAGE_SIZE_OPTIONS.map((size) => ({
 }));
 
 export function ProductPageSizeSelect({ onPageSizeChange, pageSize }) {
+  const { t } = useLanguage();
+
   return (
     <label className="products-page-size">
-      <span>На страница</span>
+      <span>{t("pagination.perPage")}</span>
       <CustomSelect
-        ariaLabel="Брой продукти на страница"
+        ariaLabel={t("pagination.perPageAria")}
         value={pageSize}
         onChange={(value) => onPageSizeChange(Number(value))}
         options={pageSizeOptions}
@@ -57,6 +60,7 @@ export default function ProductPagination({
   onPageChange,
   totalPages,
 }) {
+  const { t } = useLanguage();
   const safeTotalPages = Math.max(1, totalPages);
   const safeCurrentPage = Math.min(Math.max(1, currentPage), safeTotalPages);
   const paginationItems = getPaginationItems(safeCurrentPage, safeTotalPages);
@@ -64,14 +68,14 @@ export default function ProductPagination({
   return (
     <div className="products-pagination-bar">
       {safeTotalPages > 1 && (
-        <nav className="products-pagination" aria-label="Страници">
+        <nav className="products-pagination" aria-label={t("pagination.pages")}>
           <button
             type="button"
             className="products-pagination-button"
             onClick={() => onPageChange(Math.max(1, safeCurrentPage - 1))}
             disabled={safeCurrentPage === 1}
           >
-            Назад
+            {t("pagination.prev")}
           </button>
 
           <div className="products-pagination-pages">
@@ -100,7 +104,7 @@ export default function ProductPagination({
             onClick={() => onPageChange(Math.min(safeTotalPages, safeCurrentPage + 1))}
             disabled={safeCurrentPage === safeTotalPages}
           >
-            Напред
+            {t("pagination.next")}
           </button>
         </nav>
       )}

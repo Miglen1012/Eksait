@@ -1,24 +1,33 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { normalizeErrors } from "../api/client";
-import { fetchEquipmentProducts } from "../api/equipment";
-import { searchProducts } from "../api/products";
+import { fetchEquipmentProducts, searchEquipmentProducts } from "../api/equipment";
 import CustomSelect from "../components/form/CustomSelect";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
+import { useLanguage } from "../utils/language";
 import { DEFAULT_PRODUCT_PAGE_SIZE, getPageSizeFromSearch } from "../utils/pagination";
 import { formatPrice } from "../utils/products";
 import { normalizeSearchText } from "../utils/search";
 import "../styles/products.css";
 import "../styles/equipment.css";
 
-const sortOptions = [
-  { value: "name-asc", label: "По име А-Я" },
-  { value: "name-desc", label: "По име Я-А" },
-  { value: "price-asc", label: "Цена възходяща" },
-  { value: "price-desc", label: "Цена низходяща" },
+const SORT_OPTION_VALUES = [
+  "name-asc",
+  "name-desc",
+  "price-asc",
+  "price-desc",
 ];
 const equipmentCollator = new Intl.Collator("bg-BG", { sensitivity: "base", numeric: true });
 const PRICE_RANGE_STEP = 0.01;
-const sortValues = new Set(sortOptions.map((option) => option.value));
+const sortValues = new Set(SORT_OPTION_VALUES);
+
+function getSortOptions(t) {
+  return [
+    { value: "name-asc", label: t("sort.nameAsc") },
+    { value: "name-desc", label: t("sort.nameDesc") },
+    { value: "price-asc", label: t("sort.priceAsc") },
+    { value: "price-desc", label: t("sort.priceDesc") },
+  ];
+}
 
 function getPageFromSearch() {
   const rawPage = Number.parseInt(new URLSearchParams(window.location.search).get("page") || "1", 10);
@@ -169,6 +178,7 @@ function sanitizePriceFilters(filters, priceBounds) {
 }
 
 function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
+  const { t } = useLanguage();
   const activeRangeHandleRef = useRef(null);
   const [activeRangeHandle, setActiveRangeHandle] = useState("");
   const minBound = priceBounds.min;
@@ -257,7 +267,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
   return (
     <fieldset className="products-price-filter products-price-range">
       <div className="products-price-header">
-        <legend>Цена</legend>
+        <legend>{t("price.title")}</legend>
       </div>
 
       <div
@@ -281,7 +291,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
               step={PRICE_RANGE_STEP}
               value={safeSelectedMin}
               onChange={(event) => updateMinPrice(event.target.value)}
-              aria-label="Минимална цена"
+              aria-label={t("price.min")}
             />
             <input
               type="range"
@@ -290,7 +300,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
               step={PRICE_RANGE_STEP}
               value={safeSelectedMax}
               onChange={(event) => updateMaxPrice(event.target.value)}
-              aria-label="Максимална цена"
+              aria-label={t("price.max")}
             />
           </>
         )}
@@ -307,7 +317,9 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
 }
 
 function EquipmentFilters({ filters, products, sortMode, onApply }) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
+  const filterMenuRef = useRef(null);
   const [draftFilters, setDraftFilters] = useState(filters);
   const [draftSortMode, setDraftSortMode] = useState(sortMode);
   const draftPriceBounds = useMemo(
@@ -320,6 +332,39 @@ function EquipmentFilters({ filters, products, sortMode, onApply }) {
     filters.maxPrice,
     sortMode !== "default" ? sortMode : "",
   ].filter(Boolean).length;
+  const sortOptions = getSortOptions(t);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    function closeFilters() {
+      setIsOpen(false);
+    }
+
+    function handleDocumentPointerDown(event) {
+      if (filterMenuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      closeFilters();
+    }
+
+    function handleDocumentKeyDown(event) {
+      if (event.key === "Escape") {
+        closeFilters();
+      }
+    }
+
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [isOpen]);
 
   function syncDraftFilters() {
     setDraftFilters(filters);
@@ -359,14 +404,14 @@ function EquipmentFilters({ filters, products, sortMode, onApply }) {
   }
 
   return (
-    <section className="catalog-filter-menu equipment-filter-menu" aria-label="Филтри за оборудване">
+    <section className="catalog-filter-menu equipment-filter-menu" aria-label={t("equipment.filtersAria")} ref={filterMenuRef}>
       <button
         type="button"
         className={isOpen ? "catalog-filter-toggle is-open" : "catalog-filter-toggle"}
         onClick={toggleFilters}
         aria-expanded={isOpen}
       >
-        <span>Филтри</span>
+        <span>{t("common.filters")}</span>
         {activeCount > 0 && <strong>{activeCount}</strong>}
       </button>
 
@@ -374,29 +419,29 @@ function EquipmentFilters({ filters, products, sortMode, onApply }) {
         <div className="catalog-filter-panel equipment-filter-panel">
           <div className="catalog-filter-column">
             <div className="catalog-filter-title">
-              <span className="products-kicker">Филтри</span>
-              <h2>Уточни оборудването</h2>
+              <span className="products-kicker">{t("common.filters")}</span>
+              <h2>{t("equipment.refine")}</h2>
             </div>
 
             <div className="catalog-filter-fields">
               <label className="products-search-field">
-                <span>Търсене</span>
+                <span>{t("common.search")}</span>
                 <input
                   type="search"
                   value={draftFilters.search}
                   onChange={(event) => updateDraftFilter("search", event.target.value)}
-                  placeholder="Търси оборудване"
+                  placeholder={t("equipment.searchPlaceholder")}
                 />
               </label>
 
               <label className="products-sort-field">
-                <span>Сортиране</span>
+                <span>{t("common.sort")}</span>
                 <CustomSelect
-                  ariaLabel="Сортиране"
+                  ariaLabel={t("common.sort")}
                   value={draftSortMode}
                   onChange={setDraftSortMode}
                   options={sortOptions}
-                  placeholder="Избери"
+                  placeholder={t("common.choose")}
                 />
               </label>
             </div>
@@ -409,10 +454,10 @@ function EquipmentFilters({ filters, products, sortMode, onApply }) {
 
             <div className="catalog-filter-actions">
               <button type="button" className="products-clear-filters" onClick={clearDraftFilters}>
-                Изчисти
+                {t("common.clear")}
               </button>
               <button type="button" className="catalog-filter-search" onClick={applyDraftFilters}>
-                Търсене
+                {t("common.search")}
               </button>
             </div>
           </div>
@@ -423,6 +468,7 @@ function EquipmentFilters({ filters, products, sortMode, onApply }) {
 }
 
 function EquipmentCard({ product }) {
+  const { t } = useLanguage();
   const categoryNames = product.categoryNames || product.categories.map((category) => category.name).join(", ");
   const productPath = getProductPath(product);
   const plainDescription = product.plainDescription || "";
@@ -434,7 +480,7 @@ function EquipmentCard({ product }) {
           {product.image ? (
             <img src={product.image} alt={product.name} loading="lazy" decoding="async" />
           ) : (
-            <span className="product-card-media-placeholder">Оборудване</span>
+            <span className="product-card-media-placeholder">{t("equipment.title")}</span>
           )}
         </span>
       </a>
@@ -445,12 +491,12 @@ function EquipmentCard({ product }) {
 
         <div className="product-card-footer">
           {product.hasVariants ? (
-            <span className="product-card-footer-info product-card-footer-info--variant">Натисни преглед за още подробности</span>
+            <span className="product-card-footer-info product-card-footer-info--variant">{t("common.viewDetailsPrompt")}</span>
           ) : (
             <strong>{formatPrice(product.price)}</strong>
           )}
 
-          <a href={productPath} className="product-card-action">Преглед</a>
+          <a href={productPath} className="product-card-action">{t("common.view")}</a>
         </div>
       </div>
     </article>
@@ -458,6 +504,7 @@ function EquipmentCard({ product }) {
 }
 
 export default function Equipment() {
+  const { language, t } = useLanguage();
   const [products, setProducts] = useState([]);
   const [filters, setFilters] = useState(getEquipmentFiltersFromSearch);
   const [sortMode, setSortMode] = useState(getSortModeFromSearch);
@@ -478,7 +525,7 @@ export default function Equipment() {
 
       try {
         if (!isCancelled) {
-          setProducts(await fetchEquipmentProducts());
+          setProducts(await fetchEquipmentProducts({ language }));
         }
       } catch (error) {
         if (!isCancelled) {
@@ -497,7 +544,7 @@ export default function Equipment() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     function handleHistoryChange() {
@@ -518,19 +565,33 @@ export default function Equipment() {
 
   useEffect(() => {
     const trimmedSearch = filters.search.trim();
+    let isCancelled = false;
 
     if (!trimmedSearch) {
-      setSearchResults(null);
-      setSearchLoading(false);
-      return;
+      window.queueMicrotask(() => {
+        if (!isCancelled) {
+          setSearchResults(null);
+          setSearchLoading(false);
+        }
+      });
+
+      return () => {
+        isCancelled = true;
+      };
     }
 
-    let isCancelled = false;
-    setSearchLoading(true);
+    window.queueMicrotask(() => {
+      if (!isCancelled) {
+        setSearchLoading(true);
+      }
+    });
 
     async function loadSearchResults() {
       try {
-        const nextSearchResults = await searchProducts(trimmedSearch, { limit: Math.max(96, productsPerPage * 4) });
+        const nextSearchResults = await searchEquipmentProducts(trimmedSearch, {
+          language,
+          limit: Math.max(96, productsPerPage * 4),
+        });
 
         if (!isCancelled) {
           setSearchResults(nextSearchResults);
@@ -552,15 +613,12 @@ export default function Equipment() {
     return () => {
       isCancelled = true;
     };
-  }, [filters.search, productsPerPage]);
+  }, [filters.search, language, productsPerPage]);
 
   const filteredProducts = useMemo(() => {
     const minPrice = filters.minPrice === "" ? null : Number(filters.minPrice);
     const maxPrice = filters.maxPrice === "" ? null : Number(filters.maxPrice);
-    const equipmentProductIds = new Set(products.map((product) => String(product.id)));
-    const searchScopedProducts = filters.search
-      ? (searchResults || []).filter((product) => equipmentProductIds.has(String(product.id)))
-      : products;
+    const searchScopedProducts = filters.search ? (searchResults || []) : products;
 
     const nextProducts = searchScopedProducts.filter((product) => {
       const price = getProductPrice(product);
@@ -678,14 +736,14 @@ export default function Equipment() {
         <section className="products-shell">
           <div className="products-header">
             <div className="products-heading equipment-heading">
-              <span className="products-kicker">Оборудване</span>
-              <h1>Оборудване</h1>
+              <span className="products-kicker">{t("equipment.title")}</span>
+              <h1>{t("equipment.title")}</h1>
             </div>
 
             <div className="products-filter-footer products-heading-meta equipment-results-meta">
               <div className="products-filter-meta">
                 <strong>{totalProductsCount}</strong>
-                <span>{totalProductsCount === 1 ? "намерен продукт" : "намерени продукта"}</span>
+                <span>{totalProductsCount === 1 ? t("tools.foundOne") : t("tools.foundMany")}</span>
               </div>
               <ProductPageSizeSelect
                 pageSize={productsPerPage}
@@ -710,11 +768,11 @@ export default function Equipment() {
           )}
 
           {loading || searchLoading ? (
-            <div className="products-empty">Зареждане...</div>
+            <div className="products-empty">{t("common.loading")}</div>
           ) : totalProductsCount === 0 ? (
             <div className="products-empty equipment-empty">
-              <h2>Няма добавено оборудване.</h2>
-              <p>Когато добавите оборудване през backend-а, то ще се появи автоматично тук.</p>
+              <h2>{t("equipment.emptyTitle")}</h2>
+              <p>{t("equipment.emptyBody")}</p>
             </div>
           ) : (
             <>

@@ -4,6 +4,8 @@ import { fetchEquipmentProducts } from "../api/equipment";
 import { fetchProducts, getCachedProducts } from "../api/products";
 import { useCallback } from "react";
 import CustomSelect from "../components/form/CustomSelect";
+import ProductPagination from "../components/products/ProductPagination";
+import { useLanguage } from "../utils/language";
 import {
   formatPrice,
   getProductCategoryLabel,
@@ -14,6 +16,8 @@ import {
 } from "../utils/products";
 import { normalizeSearchText } from "../utils/search";
 import "../styles/product-show.css";
+
+const VARIANT_TABLE_PAGE_SIZE = 10;
 
 function getProductImages(product) {
   if (!product?.images?.length) {
@@ -74,8 +78,9 @@ function resetScrollToTop() {
 }
 
 export default function ProductShow({ productKey }) {
-  const [products, setProducts] = useState(() => getCachedProducts() || []);
-  const [loading, setLoading] = useState(() => !getCachedProducts());
+  const { language, t } = useLanguage();
+  const [products, setProducts] = useState(() => getCachedProducts(language) || []);
+  const [loading, setLoading] = useState(() => !getCachedProducts(language));
   const [messages, setMessages] = useState([]);
   const [successMessage, setSuccessMessage] = useState("");
   const [activeImage, setActiveImage] = useState("");
@@ -86,6 +91,7 @@ export default function ProductShow({ productKey }) {
   const [variantQuantities, setVariantQuantities] = useState({});
   const [activeDetailsTab, setActiveDetailsTab] = useState("sizes");
   const [variantTableSearch, setVariantTableSearch] = useState("");
+  const [variantTablePaging, setVariantTablePaging] = useState({ page: 1, productKey: "", search: "" });
   const relatedScrollerRef = useRef(null);
 
   useEffect(() => {
@@ -109,17 +115,17 @@ export default function ProductShow({ productKey }) {
   );
 
   const refreshProducts = useCallback(async () => {
-    let normalizedProducts = await fetchProducts();
+    let normalizedProducts = await fetchProducts({ language });
     let foundProduct = normalizedProducts.find((item) => item.slug === productKey || String(item.id) === String(productKey));
 
-    if (!foundProduct && getCachedProducts()) {
-      normalizedProducts = await fetchProducts({ force: true });
+    if (!foundProduct && getCachedProducts(language)) {
+      normalizedProducts = await fetchProducts({ force: true, language });
       foundProduct = normalizedProducts.find((item) => item.slug === productKey || String(item.id) === String(productKey));
     }
 
     if (!foundProduct) {
       try {
-        const normalizedEquipment = await fetchEquipmentProducts();
+        const normalizedEquipment = await fetchEquipmentProducts({ language });
         const foundEquipment = normalizedEquipment.find((item) => item.slug === productKey || String(item.id) === String(productKey));
 
         if (foundEquipment) {
@@ -133,11 +139,11 @@ export default function ProductShow({ productKey }) {
 
     setProducts(normalizedProducts);
     setActiveImage(foundProduct?.image || "");
-  }, [productKey]);
+  }, [language, productKey]);
 
   useEffect(() => {
     async function loadProduct() {
-      if (!getCachedProducts()) {
+      if (!getCachedProducts(language)) {
         setLoading(true);
       }
       setMessages([]);
@@ -216,7 +222,7 @@ export default function ProductShow({ productKey }) {
 
   async function addToCart({ variantId = "", quantity, target = "main" } = {}) {
     if (hasProductVariants(product) && !variantId) {
-      setMessages(["Изберете тип/размер преди добавяне в количката."]);
+      setMessages([t("product.mustSelectSize")]);
       return;
     }
 
@@ -224,24 +230,24 @@ export default function ProductShow({ productKey }) {
     const maxQuantity = getMaxPurchasableQuantity(nextPurchasable);
 
     if (!nextPurchasable.isAvailable) {
-      setMessages(["Продуктът не е наличен."]);
+      setMessages([t("product.unavailableMessage")]);
       return;
     }
 
     if (!hasPositivePrice(nextPurchasable.price)) {
-      setMessages(["Този тип/размер няма въведена цена и не може да бъде поръчан. Изберете друг тип/размер."]);
+      setMessages([t("product.noPriceMessage")]);
       return;
     }
 
     const normalizedQuantity = Number(quantity);
 
     if (!Number.isFinite(normalizedQuantity) || normalizedQuantity < 1) {
-      setMessages(["Изберете валидно количество."]);
+      setMessages([t("product.invalidQuantity")]);
       return;
     }
 
     if (maxQuantity > 0 && normalizedQuantity > maxQuantity) {
-      setMessages(["Не може да закупите повече."]);
+      setMessages([t("product.tooMany")]);
       return;
     }
 
@@ -259,7 +265,7 @@ export default function ProductShow({ productKey }) {
         }),
       });
       window.dispatchEvent(new Event("cart:changed"));
-      setSuccessMessage("Продуктът беше добавен в количката.");
+      setSuccessMessage(t("product.addedToCart"));
     } catch (error) {
       setMessages(normalizeErrors(error));
       try {
@@ -303,7 +309,7 @@ export default function ProductShow({ productKey }) {
     return (
       <main className="product-show-page">
         <section className="product-show-shell">
-          <div className="product-show-empty">Зареждане...</div>
+          <div className="product-show-empty">{t("common.loading")}</div>
         </section>
       </main>
     );
@@ -313,7 +319,7 @@ export default function ProductShow({ productKey }) {
     return (
       <main className="product-show-page">
         <section className="product-show-shell">
-          <div className="product-show-empty">Продуктът не е намерен.</div>
+          <div className="product-show-empty">{t("product.notFound")}</div>
         </section>
       </main>
     );
@@ -326,8 +332,8 @@ export default function ProductShow({ productKey }) {
   const hasExtraInformation = hasRichTextContent(extraInformation);
   const hasSizeTable = hasProductVariants(product);
   const detailsTabs = [
-    hasSizeTable ? { id: "sizes", label: "Таблица с типове/размери" } : null,
-    hasExtraInformation ? { id: "info", label: "Допълнителна информация" } : null,
+    hasSizeTable ? { id: "sizes", label: t("product.sizeTable") } : null,
+    hasExtraInformation ? { id: "info", label: t("product.extraInfo") } : null,
   ].filter(Boolean);
   const selectedDetailsTab = detailsTabs.some((tab) => tab.id === activeDetailsTab)
     ? activeDetailsTab
@@ -341,10 +347,10 @@ export default function ProductShow({ productKey }) {
       const isAvailable = isVariantAvailable(variant);
       const hasPrice = hasPositivePrice(variant.price);
       const availabilityLabel = !isAvailable
-        ? "изчерпан"
+        ? t("product.outOfStockLower")
         : hasPrice
-          ? "в наличност"
-          : "няма въведена цена";
+          ? t("product.variantAvailableLower")
+          : t("product.variantNoPriceLower");
 
       return {
         value: String(variant.id),
@@ -354,9 +360,27 @@ export default function ProductShow({ productKey }) {
     })
     : [];
   const normalizedVariantTableSearch = normalizeSearchText(variantTableSearch);
-  const visibleTableVariants = hasSizeTable && normalizedVariantTableSearch
-    ? product.variants.filter((variant) => normalizeSearchText(variant.size).includes(normalizedVariantTableSearch))
-    : product.variants;
+  const filteredTableVariants = hasSizeTable
+    ? (
+      normalizedVariantTableSearch
+        ? product.variants.filter((variant) => normalizeSearchText(variant.size).includes(normalizedVariantTableSearch))
+        : product.variants
+    )
+    : [];
+  const variantTableTotalPages = Math.max(1, Math.ceil(filteredTableVariants.length / VARIANT_TABLE_PAGE_SIZE));
+  const requestedVariantTablePage = (
+    variantTablePaging.productKey === productKey &&
+    variantTablePaging.search === normalizedVariantTableSearch
+  )
+    ? variantTablePaging.page
+    : 1;
+  const safeVariantTablePage = Math.min(requestedVariantTablePage, variantTableTotalPages);
+  const variantTableStartIndex = (safeVariantTablePage - 1) * VARIANT_TABLE_PAGE_SIZE;
+  const paginatedTableVariants = filteredTableVariants.slice(
+    variantTableStartIndex,
+    variantTableStartIndex + VARIANT_TABLE_PAGE_SIZE,
+  );
+  const variantTableEndIndex = Math.min(variantTableStartIndex + paginatedTableVariants.length, filteredTableVariants.length);
 
   function goToImage(offset) {
     if (imageOptions.length <= 1) {
@@ -392,9 +416,9 @@ export default function ProductShow({ productKey }) {
                 type="button"
                 className="product-show-image"
                 onClick={() => activeImage && setPreviewImage(activeImage)}
-                aria-label="Отвори снимката"
+                aria-label={t("product.imageOpen")}
               >
-                {activeImage ? <img src={activeImage} alt={product.name} loading="eager" fetchPriority="high" decoding="async" /> : <span>Няма снимка</span>}
+                {activeImage ? <img src={activeImage} alt={product.name} loading="eager" fetchPriority="high" decoding="async" /> : <span>{t("common.noImage")}</span>}
               </button>
 
               {imageOptions.length > 1 && (
@@ -403,27 +427,27 @@ export default function ProductShow({ productKey }) {
                     type="button"
                     className="product-gallery-arrow product-gallery-arrow--prev"
                     onClick={() => goToImage(-1)}
-                    aria-label="Предишна снимка"
+                    aria-label={t("product.imagePrevious")}
                   />
                   <button
                     type="button"
                     className="product-gallery-arrow product-gallery-arrow--next"
                     onClick={() => goToImage(1)}
-                    aria-label="Следваща снимка"
+                    aria-label={t("product.imageNext")}
                   />
                 </>
               )}
             </div>
 
             {imageOptions.length > 1 && (
-              <div className="product-thumbs" aria-label="Снимки на продукта">
+              <div className="product-thumbs" aria-label={t("product.imageThumbs")}>
                 {imageOptions.map((image) => (
                   <button
                     type="button"
                     className={image.url === activeImage ? "is-active" : ""}
                     onClick={() => setActiveImage(image.url)}
                     key={image.id || image.url}
-                    aria-label="Покажи снимка"
+                    aria-label={t("product.imageShow")}
                   >
                     <img src={image.url} alt="" loading="lazy" decoding="async" />
                   </button>
@@ -433,31 +457,31 @@ export default function ProductShow({ productKey }) {
           </div>
 
           <div className="product-show-info">
-            <span className="products-kicker">{categoryNames || "Продукт"}</span>
+            <span className="products-kicker">{categoryNames || t("common.product")}</span>
             <h1>{product.name}</h1>
             {description && <p className="product-show-description">{description}</p>}
 
             <div className="product-show-meta">
               {(!hasProductVariants(product) || !purchasable.needsVariant) && (
                 <div className={purchasable.isAvailable ? "product-stock is-available" : "product-stock"}>
-                  {purchasable.isAvailable ? "В наличност" : "Не е наличен"}
+                  {purchasable.isAvailable ? t("product.available") : t("product.notAvailable")}
                 </div>
               )}
-              {productDisplayCode && <span className="product-code">Код: {productDisplayCode}</span>}
+              {productDisplayCode && <span className="product-code">{t("product.code")}: {productDisplayCode}</span>}
             </div>
 
             <div className="product-show-buy">
               {hasProductVariants(product) && (
                 <CustomSelect
-                  ariaLabel="Избор на тип/размер"
+                  ariaLabel={t("product.selectSize")}
                   value={safeSelectedVariantId}
                   onChange={(value) => {
                     setSelectedVariantId(value);
                     setPurchaseQuantity(1);
                   }}
-                  options={[{ value: "", label: "Изберете тип/размер", disabled: true }, ...variantOptions]}
-                  placeholder="Изберете тип/размер"
-                  searchPlaceholder="Търси по тип/размер"
+                  options={[{ value: "", label: t("product.selectSize"), disabled: true }, ...variantOptions]}
+                  placeholder={t("product.selectSize")}
+                  searchPlaceholder={t("product.searchSize")}
                 />
               )}
 
@@ -465,7 +489,7 @@ export default function ProductShow({ productKey }) {
                 <>
                   <strong>{formatPrice(purchasable.price)}</strong>
 
-                  <div className="product-show-quantity-control" aria-label={`Количество за ${product.name}`}>
+                  <div className="product-show-quantity-control" aria-label={t("product.quantityFor", { name: product.name })}>
                     <button
                       type="button"
                       className="product-show-qty-btn"
@@ -481,7 +505,7 @@ export default function ProductShow({ productKey }) {
                       value={safePurchaseQuantity}
                       onChange={(event) => updateQuantity(event.target.value)}
                       disabled={adding || !purchasable.isAvailable || !hasPurchasablePrice}
-                      aria-label="Количество"
+                      aria-label={t("product.quantity")}
                     />
                     <button
                       type="button"
@@ -506,14 +530,14 @@ export default function ProductShow({ productKey }) {
                 disabled={!canAddToCart}
               >
                 {addingTarget === "main"
-                  ? "Добавяне..."
+                  ? t("common.adding")
                   : purchasable.needsVariant
-                    ? "Избери тип/размер"
+                    ? t("product.selectSizeShort")
                     : !purchasable.isAvailable
-                      ? "Изчерпан"
+                      ? t("product.outOfStock")
                       : hasPurchasablePrice
-                        ? "Добави в количката"
-                        : "Няма цена"}
+                        ? t("product.addToCart")
+                        : t("product.noPrice")}
               </button>
 
               {(successMessage || messages.length > 0) && (
@@ -536,18 +560,18 @@ export default function ProductShow({ productKey }) {
         {relatedProducts.length > 0 && (
           <section className="product-show-related" aria-labelledby="related-products-title">
             <div className="product-show-related-header">
-              <h2 id="related-products-title">Свързани продукти</h2>
+              <h2 id="related-products-title">{t("product.related")}</h2>
               {relatedProducts.length > 1 && (
-                <div className="product-show-related-controls" aria-label="Навигация за свързани продукти">
-                  <button type="button" onClick={() => scrollRelatedProducts(-1)} aria-label="Предишни свързани продукти" />
-                  <button type="button" onClick={() => scrollRelatedProducts(1)} aria-label="Следващи свързани продукти" />
+                <div className="product-show-related-controls" aria-label={t("product.relatedNav")}>
+                  <button type="button" onClick={() => scrollRelatedProducts(-1)} aria-label={t("product.relatedPrevious")} />
+                  <button type="button" onClick={() => scrollRelatedProducts(1)} aria-label={t("product.relatedNext")} />
                 </div>
               )}
             </div>
 
             <div className="product-show-related-grid" ref={relatedScrollerRef}>
               {relatedProducts.map((relatedProduct) => {
-                const relatedCategory = getProductCategoryLabel(relatedProduct);
+                const relatedCategory = getProductCategoryLabel(relatedProduct, t("common.product"));
 
                 return (
                   <article className="product-show-related-card" key={relatedProduct.id}>
@@ -555,7 +579,7 @@ export default function ProductShow({ productKey }) {
                       {relatedProduct.image ? (
                         <img src={relatedProduct.image} alt={relatedProduct.name} loading="lazy" decoding="async" />
                       ) : (
-                        <span>Няма снимка</span>
+                        <span>{t("common.noImage")}</span>
                       )}
                     </a>
 
@@ -568,11 +592,11 @@ export default function ProductShow({ productKey }) {
                       <div className="product-show-related-footer">
                         <strong>
                           {hasProductVariants(relatedProduct)
-                            ? "Цена според вариант"
+                            ? t("product.priceByVariant")
                             : formatPrice(relatedProduct.price)}
                         </strong>
                         <a className="product-show-related-link" href={getProductPath(relatedProduct)}>
-                          Преглед
+                          {t("common.view")}
                         </a>
                       </div>
                     </div>
@@ -586,7 +610,7 @@ export default function ProductShow({ productKey }) {
         {detailsTabs.length > 0 && (
           <div className="product-show-details">
             {detailsTabs.length > 1 && (
-              <div className="product-show-tabs" role="tablist" aria-label="Информация за продукта">
+              <div className="product-show-tabs" role="tablist" aria-label={t("product.detailsAria")}>
                 {detailsTabs.map((tab) => (
                   <button
                     type="button"
@@ -608,34 +632,47 @@ export default function ProductShow({ productKey }) {
               {selectedDetailsTab === "sizes" && hasSizeTable && (
                 <>
                   <label className="product-show-size-search">
-                    <span>Търси по тип/размер</span>
+                    <span>{t("product.searchSize")}</span>
                     <input
                       type="search"
                       value={variantTableSearch}
                       onChange={(event) => setVariantTableSearch(event.target.value)}
-                      placeholder="Търси по тип/размер"
+                      placeholder={t("product.searchSize")}
                     />
                   </label>
+
+                  {filteredTableVariants.length > 0 && (
+                    <div className="product-show-table-meta">
+                      <span>
+                        {t("product.tableShown", {
+                          from: variantTableStartIndex + 1,
+                          to: variantTableEndIndex,
+                          total: filteredTableVariants.length,
+                        })}
+                      </span>
+                      <span>{t("product.pageSizeHint")}</span>
+                    </div>
+                  )}
 
                   <div className="product-show-table-wrap">
                     <table className="product-show-size-table">
                       <thead>
                         <tr>
-                          <th>Тип/Размер</th>
-                          <th>Цена</th>
-                          <th>Наличност</th>
-                          <th>Бройка</th>
-                          <th>Добавяне</th>
+                          <th>{t("product.size")}</th>
+                          <th>{t("price.title")}</th>
+                          <th>{t("product.availability")}</th>
+                          <th>{t("product.tableQuantity")}</th>
+                          <th>{t("product.tableAdd")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleTableVariants.length > 0 ? visibleTableVariants.map((variant) => (
+                        {filteredTableVariants.length > 0 ? paginatedTableVariants.map((variant) => (
                           <tr key={variant.id}>
                             <td>{variant.size || "-"}</td>
-                            <td>{formatPrice(variant.price)}</td>
-                            <td>{isVariantAvailable(variant) ? "В наличност" : "Изчерпан"}</td>
-                            <td>
-                              <div className="product-show-table-quantity-control" aria-label={`Количество за ${variant.size || product.name}`}>
+                            <td data-label={t("price.title")}>{formatPrice(variant.price)}</td>
+                            <td data-label={t("product.availability")}>{isVariantAvailable(variant) ? t("product.available") : t("product.outOfStock")}</td>
+                            <td data-label={t("product.tableQuantity")}>
+                              <div className="product-show-table-quantity-control" aria-label={t("product.quantityFor", { name: variant.size || product.name })}>
                                 <button
                                   type="button"
                                   className="product-show-table-qty-btn"
@@ -651,7 +688,7 @@ export default function ProductShow({ productKey }) {
                                   value={getSafeVariantQuantity(variant.id)}
                                   onChange={(event) => updateVariantQuantity(variant.id, event.target.value)}
                                   disabled={addingTarget === `variant:${variant.id}` || !isVariantAvailable(variant) || !hasPositivePrice(variant.price)}
-                                  aria-label={`Бройка за ${variant.size || product.name}`}
+                                  aria-label={t("product.tableQuantityFor", { name: variant.size || product.name })}
                                 />
                                 <button
                                   type="button"
@@ -667,7 +704,7 @@ export default function ProductShow({ productKey }) {
                                 </button>
                               </div>
                             </td>
-                            <td>
+                            <td data-label={t("product.tableAdd")}>
                               <button
                                 type="button"
                                 className="product-show-table-add-button"
@@ -687,25 +724,37 @@ export default function ProductShow({ productKey }) {
                                 }
                               >
                                 {addingTarget === `variant:${variant.id}`
-                                  ? "Добавяне..."
+                                  ? t("common.adding")
                                   : !isVariantAvailable(variant)
-                                    ? "Изчерпан"
+                                    ? t("product.outOfStock")
                                     : hasPositivePrice(variant.price)
-                                      ? "Добави"
-                                      : "Няма цена"}
+                                      ? t("common.add")
+                                      : t("product.noPrice")}
                               </button>
                             </td>
                           </tr>
                         )) : (
                           <tr>
                             <td colSpan="5" className="product-show-size-empty">
-                              Няма типове/размери, които съвпадат с търсенето.
+                              {t("product.noMatchingSizes")}
                             </td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
+
+                  {variantTableTotalPages > 1 && (
+                    <ProductPagination
+                      currentPage={safeVariantTablePage}
+                      totalPages={variantTableTotalPages}
+                      onPageChange={(page) => setVariantTablePaging({
+                        page,
+                        productKey,
+                        search: normalizedVariantTableSearch,
+                      })}
+                    />
+                  )}
                 </>
               )}
 
@@ -723,7 +772,7 @@ export default function ProductShow({ productKey }) {
       {previewImage && (
         <div className="image-preview" role="dialog" aria-modal="true" onClick={() => setPreviewImage("")}>
           <div className="image-preview-card" onClick={(event) => event.stopPropagation()}>
-            <button type="button" className="image-preview-close" onClick={() => setPreviewImage("")} aria-label="Затвори">
+            <button type="button" className="image-preview-close" onClick={() => setPreviewImage("")} aria-label={t("common.close")}>
               ×
             </button>
             {imageOptions.length > 1 && (
@@ -732,13 +781,13 @@ export default function ProductShow({ productKey }) {
                   type="button"
                   className="image-preview-arrow image-preview-arrow--prev"
                 onClick={() => goToImage(-1)}
-                aria-label="Предишна снимка"
+                aria-label={t("product.imagePrevious")}
                 />
                 <button
                   type="button"
                   className="image-preview-arrow image-preview-arrow--next"
                   onClick={() => goToImage(1)}
-                  aria-label="Следваща снимка"
+                  aria-label={t("product.imageNext")}
                 />
               </>
             )}

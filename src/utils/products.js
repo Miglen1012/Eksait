@@ -1,4 +1,29 @@
+import { collectLocalizedValues, getLocalizedText, normalizeLanguageCode } from "./localized";
+import { getStoredLanguage } from "./language";
 import { normalizeSearchText } from "./search";
+import { categories, getCategoryTokens } from "../data/categories";
+
+const PRODUCT_NAME_KEYS = ["name", "title", "product_name", "productName"];
+const PRODUCT_DESCRIPTION_KEYS = ["description", "short_description", "shortDescription", "content", "body"];
+const PRODUCT_EXTRA_INFO_KEYS = ["extra_information", "extraInformation", "additional_information", "additionalInformation"];
+const CATEGORY_NAME_KEYS = ["name", "label", "title", "category_name", "categoryName"];
+const MATERIAL_KEYS = [
+  "material",
+  "material_type",
+  "materialType",
+  "material_name",
+  "materialName",
+  "attribute_material",
+];
+const VARIANT_SIZE_KEYS = ["size", "name", "label", "title"];
+const localeByLanguage = {
+  bg: "bg-BG",
+  en: "en-US",
+  de: "de-DE",
+};
+const knownCategoryTokens = Object.fromEntries(
+  categories.map((category) => [category.slug, getCategoryTokens(category)]),
+);
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -92,48 +117,79 @@ function getAttributeValue(source = {}, keys = []) {
   return "";
 }
 
-function normalizeMaterial(source = {}) {
+function getKnownCategorySlug(category = {}) {
+  const categoryTokens = [
+    category.slug,
+    category.category_slug,
+    category.categorySlug,
+    category.name,
+    category.label,
+    category.title,
+    category.category_name,
+    category.categoryName,
+    ...collectLocalizedValues(category, CATEGORY_NAME_KEYS),
+  ]
+    .map((token) => normalizeSearchText(token))
+    .filter(Boolean);
+
+  for (const [slug, aliases] of Object.entries(knownCategoryTokens)) {
+    const normalizedAliases = aliases.map((alias) => normalizeSearchText(alias));
+
+    if (categoryTokens.some((token) => (
+      token === slug ||
+      normalizedAliases.includes(token) ||
+      normalizedAliases.some((alias) => token.includes(alias) || alias.includes(token))
+    ))) {
+      return slug;
+    }
+  }
+
+  return "";
+}
+
+function normalizeMaterial(source = {}, language) {
   const material = (
-    source.material ||
-    source.material_type ||
-    source.materialType ||
-    source.material_name ||
-    source.materialName ||
-    source.attribute_material ||
+    getLocalizedText(source, MATERIAL_KEYS, language) ||
     getAttributeValue(source, ["material", "материал", "вид материал"])
   );
 
   return String(material || "").trim();
 }
 
-function normalizeCategory(category) {
+function normalizeCategory(category, language) {
   if (!category) {
     return null;
   }
 
   if (typeof category === "string") {
-    return { name: category, slug: "" };
+    const slug = getKnownCategorySlug({ name: category });
+    return {
+      name: category,
+      slug,
+    };
   }
 
-  const name = category.name || category.label || category.title || category.category_name || category.categoryName || "";
+  const rawName = getLocalizedText(category, CATEGORY_NAME_KEYS, language);
   const slug = category.slug || category.category_slug || category.categorySlug || "";
+  const knownSlug = getKnownCategorySlug({ ...category, name: rawName, slug });
+  const name = rawName;
 
-  if (!name && !slug) {
+  if (!name && !slug && !knownSlug) {
     return null;
   }
 
   return {
     ...category,
-    name: name || slug,
-    slug,
+    name: name || slug || knownSlug,
+    slug: knownSlug || slug,
   };
 }
 
-function normalizeCategories(product = {}) {
+function normalizeCategories(product = {}, language) {
   const rawCategories = product.categories || product.product_categories || product.productCategories;
 
   if (Array.isArray(rawCategories)) {
-    return rawCategories.map(normalizeCategory).filter(Boolean);
+    return rawCategories.map((category) => normalizeCategory(category, language)).filter(Boolean);
   }
 
   const singleCategory =
@@ -143,7 +199,7 @@ function normalizeCategories(product = {}) {
     product.category_label ||
     product.categoryLabel;
 
-  const normalizedCategory = normalizeCategory(singleCategory);
+  const normalizedCategory = normalizeCategory(singleCategory, language);
 
   return normalizedCategory ? [normalizedCategory] : [];
 }
@@ -184,18 +240,30 @@ export function getPrimaryImage(images = []) {
   return primary?.url || primary?.image_url || primary?.image_path || sorted[0]?.url || sorted[0]?.image_url || sorted[0]?.image_path || "";
 }
 
-export function getProductCategoryLabel(product, fallback = "Продукт") {
+export function getProductCategoryLabel(product, fallback = "Product") {
   return product?.categories?.find((category) => category?.name)?.name || fallback;
 }
 
-function normalizeVariant(variant) {
+function getProductFallbackName(id, language) {
+  const fallbackByLanguage = {
+    bg: "Продукт",
+    en: "Product",
+    de: "Produkt",
+  };
+  const label = fallbackByLanguage[normalizeLanguageCode(language)] || fallbackByLanguage.bg;
+
+  return `${label} #${id}`;
+}
+
+function normalizeVariant(variant, language) {
   const quantity = normalizeQuantity(variant);
+  const size = getLocalizedText(variant, VARIANT_SIZE_KEYS, language);
 
   return {
     id: variant.id,
     productId: variant.product_id ?? variant.productId ?? variant.product?.id ?? null,
     relatedProductId: variant.related_product_id ?? variant.relatedProductId ?? variant.related_product?.id ?? variant.relatedProduct?.id ?? null,
-    size: variant.size || variant.name || "",
+    size,
     price: toNumber(variant.sale_price ?? variant.price, 0),
     regularPrice: toNumber(variant.price, 0),
     stock: normalizeStock(variant) || (quantity !== null && quantity > 0),
@@ -205,29 +273,43 @@ function normalizeVariant(variant) {
   };
 }
 
-function normalizeProduct(product, includeRelated = true) {
-  const variants = Array.isArray(product.variants) ? product.variants.map(normalizeVariant) : [];
+function normalizeProduct(product, includeRelated = true, language = "bg") {
+  const normalizedLanguage = normalizeLanguageCode(language);
+  const name = getLocalizedText(product, PRODUCT_NAME_KEYS, normalizedLanguage, product.name || getProductFallbackName(product.id, normalizedLanguage));
+  const variants = Array.isArray(product.variants)
+    ? product.variants.map((variant) => normalizeVariant(variant, normalizedLanguage))
+    : [];
   const quantity = normalizeQuantity(product);
-  const categories = normalizeCategories(product);
-  const description = product.description || "";
+  const categories = normalizeCategories(product, normalizedLanguage);
+  const description = getLocalizedText(product, PRODUCT_DESCRIPTION_KEYS, normalizedLanguage);
   const plainDescription = stripHtml(description);
-  const material = normalizeMaterial(product);
+  const extraInformation = getLocalizedText(product, PRODUCT_EXTRA_INFO_KEYS, normalizedLanguage);
+  const material = normalizeMaterial(product, normalizedLanguage);
   const categoryNames = categories.map((category) => category?.name).filter(Boolean).join(", ");
   const searchText = normalizeSearchText([
-    product.name,
+    name,
     product.slug,
     material,
     plainDescription,
     ...categories.map((category) => category?.name),
+    ...variants.map((variant) => variant?.size),
+    ...collectLocalizedValues(product, [
+      ...PRODUCT_NAME_KEYS,
+      ...PRODUCT_DESCRIPTION_KEYS,
+      ...PRODUCT_EXTRA_INFO_KEYS,
+      ...MATERIAL_KEYS,
+    ]),
+    ...categories.flatMap((category) => collectLocalizedValues(category, CATEGORY_NAME_KEYS)),
+    ...variants.flatMap((variant) => collectLocalizedValues(variant, VARIANT_SIZE_KEYS)),
   ].filter(Boolean).join(" "));
 
   return {
     id: product.id,
-    name: product.name || `Продукт #${product.id}`,
+    name,
     slug: product.slug || "",
     description,
     plainDescription,
-    extraInformation: product.extra_information || "",
+    extraInformation,
     price: toNumber(product.sale_price ?? product.price, 0),
     regularPrice: toNumber(product.price, 0),
     stock: normalizeStock(product) || (quantity !== null && quantity > 0),
@@ -243,12 +325,13 @@ function normalizeProduct(product, includeRelated = true) {
     images: Array.isArray(product.images) ? product.images : [],
     image: product.image_url || product.primary_image_url || product.thumbnail_url || getPrimaryImage(product.images || []) || product.image || "",
     relatedProducts: includeRelated
-      ? getRelatedProducts(product).map((relatedProduct) => normalizeProduct(relatedProduct, false))
+      ? getRelatedProducts(product).map((relatedProduct) => normalizeProduct(relatedProduct, false, normalizedLanguage))
       : [],
   };
 }
 
-export function normalizeProducts(data) {
+export function normalizeProducts(data, options = {}) {
+  const language = normalizeLanguageCode(typeof options === "string" ? options : options.language);
   const products = Array.isArray(data?.data)
     ? data.data
     : Array.isArray(data?.items)
@@ -261,7 +344,7 @@ export function normalizeProducts(data) {
             ? [data.data]
             : [];
 
-  return products.map((product) => normalizeProduct(product));
+  return products.map((product) => normalizeProduct(product, true, language));
 }
 
 export function getSelectedVariant(product, variantId) {
@@ -315,8 +398,10 @@ export function stripHtml(value) {
     .trim();
 }
 
-export function formatPrice(value) {
-  return new Intl.NumberFormat("bg-BG", {
+export function formatPrice(value, language = getStoredLanguage()) {
+  const locale = localeByLanguage[normalizeLanguageCode(language)] || localeByLanguage.bg;
+
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency: "EUR",
   }).format(toNumber(value, 0));

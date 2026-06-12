@@ -46,7 +46,7 @@
   }
 
   .equipment-filter-menu .catalog-filter-panel {
-    position: static;
+    position: absolute;
     width: 100%;
   }
 }

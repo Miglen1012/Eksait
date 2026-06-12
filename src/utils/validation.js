@@ -1,4 +1,10 @@
-export const PHONE_ERROR = "Телефонът трябва да започва с 0 и да е точно 10 цифри.";
+import { translate } from "./language";
+
+export function getPhoneError(language) {
+  return translate("validation.phone", language);
+}
+
+export const PHONE_ERROR = getPhoneError();
 export const PHONE_PATTERN = "0[0-9]{9}";
 
 export function normalizePhone(value) {

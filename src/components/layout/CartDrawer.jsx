@@ -2,6 +2,7 @@
 import { apiRequest, getApiBaseUrl, getCartSessionId, normalizeErrors } from "../../api/client";
 import { fetchProducts } from "../../api/products";
 import { getCartItemsFromResponse } from "../../utils/cart";
+import { useLanguage } from "../../utils/language";
 import { getPrimaryImage } from "../../utils/products";
 import "../../styles/layout.css";
 
@@ -42,9 +43,15 @@ function buildProductLookup(products) {
   }, {});
 }
 
-async function fetchProductLookup() {
+const priceLocaleByLanguage = {
+  bg: "bg-BG",
+  en: "en-US",
+  de: "de-DE",
+};
+
+async function fetchProductLookup(language) {
   try {
-    return buildProductLookup(await fetchProducts());
+    return buildProductLookup(await fetchProducts({ language }));
   } catch {
     return {};
   }
@@ -89,7 +96,7 @@ function cartNeedsProductLookup(cartData) {
   });
 }
 
-function normalizeDrawerItems(cartData, productLookup = {}) {
+function normalizeDrawerItems(cartData, productLookup = {}, t) {
   const items = getCartItemsFromResponse(cartData);
 
   return items.map((item) => {
@@ -97,14 +104,17 @@ function normalizeDrawerItems(cartData, productLookup = {}) {
     const productId = item.product_id || product.id || item.id;
     const variant = item.variant || {};
     const catalogProduct = productLookup[getLookupKey(productId)] || productLookup[productId];
+    const catalogVariant = catalogProduct?.variants?.find((catalogItemVariant) => (
+      String(catalogItemVariant.id) === String(item.product_variant_id ?? variant.id ?? "")
+    ));
     const quantity = Number(item.quantity || item.qty || 1);
     const price = Number(item.price || product.price || product.unit_price || catalogProduct?.price || 0);
 
     return {
       id: productId,
       variantId: item.product_variant_id ?? variant.id ?? null,
-      variantSize: variant.size || item.variant_size || "",
-      name: product.name || item.name || catalogProduct?.name || `Продукт #${productId}`,
+      variantSize: catalogVariant?.size || variant.size || item.variant_size || "",
+      name: catalogProduct?.name || product.name || item.name || `${t("common.product")} #${productId}`,
       image: getItemImage(item, product, catalogProduct),
       quantity,
       price,
@@ -113,8 +123,8 @@ function normalizeDrawerItems(cartData, productLookup = {}) {
   });
 }
 
-function formatPrice(value) {
-  return new Intl.NumberFormat("bg-BG", {
+function formatPrice(value, language) {
+  return new Intl.NumberFormat(priceLocaleByLanguage[language] || priceLocaleByLanguage.bg, {
     style: "currency",
     currency: "EUR",
   }).format(Number(value || 0));
@@ -161,6 +171,7 @@ function writeCartCache(items) {
 }
 
 export default function CartDrawer() {
+  const { language, t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [cachedCart] = useState(() => readCartCache());
   const [items, setItems] = useState(() => cachedCart?.items || []);
@@ -174,16 +185,19 @@ export default function CartDrawer() {
   );
 
   const getProductLookup = useCallback(async () => {
-    if (!productLookupRef.current) {
-      productLookupRef.current = await fetchProductLookup();
+    if (productLookupRef.current?.language !== language) {
+      productLookupRef.current = {
+        language,
+        lookup: await fetchProductLookup(language),
+      };
     }
 
-    return productLookupRef.current;
-  }, []);
+    return productLookupRef.current.lookup;
+  }, [language]);
 
   const getProductLookupForCart = useCallback(async (cartData) => (
-    cartNeedsProductLookup(cartData) ? await getProductLookup() : {}
-  ), [getProductLookup]);
+    cartNeedsProductLookup(cartData) || language !== "bg" ? await getProductLookup() : {}
+  ), [getProductLookup, language]);
 
   const loadDrawerCart = useCallback(async () => {
     setMessages([]);
@@ -193,7 +207,7 @@ export default function CartDrawer() {
     try {
       const cartData = await apiRequest("/api/cart");
       const lookup = await getProductLookupForCart(cartData);
-      const nextItems = normalizeDrawerItems(cartData, lookup);
+      const nextItems = normalizeDrawerItems(cartData, lookup, t);
       setItems(nextItems);
       writeCartCache(nextItems);
     } catch (error) {
@@ -201,7 +215,7 @@ export default function CartDrawer() {
     } finally {
       setLoading(false);
     }
-  }, [getProductLookupForCart, items.length]);
+  }, [getProductLookupForCart, items.length, t]);
 
   function navigateToCheckout() {
     setIsOpen(false);
@@ -231,6 +245,24 @@ export default function CartDrawer() {
   }, [isOpen, loadDrawerCart]);
 
   useEffect(() => {
+    if (isOpen) {
+      let isCancelled = false;
+
+      window.queueMicrotask(() => {
+        if (!isCancelled) {
+          loadDrawerCart();
+        }
+      });
+
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    return undefined;
+  }, [isOpen, language, loadDrawerCart]);
+
+  useEffect(() => {
     if (!isOpen) {
       return undefined;
     }
@@ -247,15 +279,15 @@ export default function CartDrawer() {
 
   return (
     <div className={isOpen ? "cart-drawer is-open" : "cart-drawer"} aria-hidden={!isOpen}>
-      <button type="button" className="cart-drawer-backdrop" onClick={() => setIsOpen(false)} aria-label="Затвори количката"></button>
+      <button type="button" className="cart-drawer-backdrop" onClick={() => setIsOpen(false)} aria-label={t("cart.closeCart")}></button>
 
-      <aside className="cart-drawer-panel" aria-label="Количка">
+      <aside className="cart-drawer-panel" aria-label={t("common.cart")}>
         <div className="cart-drawer-header">
           <div>
-            <span>Вашата поръчка</span>
-            <h2>Количка</h2>
+            <span>{t("cart.yourOrder")}</span>
+            <h2>{t("common.cart")}</h2>
           </div>
-          <button type="button" onClick={() => setIsOpen(false)} aria-label="Затвори">×</button>
+          <button type="button" onClick={() => setIsOpen(false)} aria-label={t("common.close")}>×</button>
         </div>
 
         <div className="cart-drawer-body">
@@ -266,9 +298,9 @@ export default function CartDrawer() {
           )}
 
           {loading ? (
-            <div className="cart-drawer-empty">Зареждане...</div>
+            <div className="cart-drawer-empty">{t("common.loading")}</div>
           ) : items.length === 0 ? (
-            <div className="cart-drawer-empty">Количката е празна.</div>
+            <div className="cart-drawer-empty">{t("cart.empty")}</div>
           ) : (
             <div className="cart-drawer-items">
               {items.map((item) => (
@@ -279,9 +311,9 @@ export default function CartDrawer() {
                   <div>
                     <h3>{item.name}</h3>
                     {item.variantSize && <p>{item.variantSize}</p>}
-                    <p>{item.quantity} × {formatPrice(item.price)}</p>
+                    <p>{item.quantity} × {formatPrice(item.price, language)}</p>
                   </div>
-                  <strong>{formatPrice(item.lineTotal)}</strong>
+                  <strong>{formatPrice(item.lineTotal, language)}</strong>
                 </article>
               ))}
             </div>
@@ -289,9 +321,9 @@ export default function CartDrawer() {
         </div>
 
         <div className="cart-drawer-footer">
-          <p><span>Общо</span><strong>{formatPrice(subtotal)}</strong></p>
-          <button type="button" onClick={navigateToCheckout}>Към поръчката</button>
-          <button type="button" onClick={() => setIsOpen(false)}>Продължи пазаруването</button>
+          <p><span>{t("cart.total")}</span><strong>{formatPrice(subtotal, language)}</strong></p>
+          <button type="button" onClick={navigateToCheckout}>{t("cart.checkout")}</button>
+          <button type="button" onClick={() => setIsOpen(false)}>{t("cart.continue")}</button>
         </div>
       </aside>
     </div>

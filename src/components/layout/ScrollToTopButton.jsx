@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useLanguage } from "../../utils/language";
 
 export default function ScrollToTopButton() {
+  const { t } = useLanguage();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export default function ScrollToTopButton() {
     <button
       className={`scroll-top-button ${isVisible ? "is-visible" : ""}`}
       type="button"
-      aria-label="Към началото"
+      aria-label={t("common.scrollTop")}
       onClick={scrollToTop}
     >
       <svg viewBox="0 0 24 24" aria-hidden="true">

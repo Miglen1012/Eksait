@@ -3,26 +3,24 @@ import { normalizeErrors } from "../api/client";
 import { fetchProducts, getCachedProducts, searchProducts } from "../api/products";
 import CustomSelect from "../components/form/CustomSelect";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
-import { categories, getCategoryByName, getCategoryBySlug } from "../data/categories";
+import { categories, getCategoryByName, getCategoryBySlug, getCategoryTokens } from "../data/categories";
+import { useLanguage } from "../utils/language";
 import { DEFAULT_PRODUCT_PAGE_SIZE, getPageSizeFromSearch } from "../utils/pagination";
 import { formatPrice } from "../utils/products";
 import { normalizeSearchText } from "../utils/search";
 import "../styles/products.css";
 
-const sortOptions = [
-  { value: "name-asc", label: "По име А-Я" },
-  { value: "name-desc", label: "По име Я-А" },
-  { value: "price-asc", label: "Цена възходяща" },
-  { value: "price-desc", label: "Цена низходяща" },
+const SORT_OPTION_VALUES = [
+  "name-asc",
+  "name-desc",
+  "price-asc",
+  "price-desc",
 ];
 const productNameCollator = new Intl.Collator("bg-BG", { sensitivity: "base", numeric: true });
 const PRICE_RANGE_STEP = 0.01;
-const TOOLS_PARENT_CATEGORY_TOKENS = ["instrumenti", "tools"];
-const sortValues = new Set(sortOptions.map((option) => option.value));
-const TOOLS_CATEGORY_TOKENS = categories
-  .flatMap((category) => [category.label, category.slug])
-  .map((token) => normalizeSearchText(token))
-  .filter(Boolean);
+const TOOLS_PARENT_CATEGORY_TOKENS = ["instrumenti", "tools", "werkzeuge"].map((token) => normalizeSearchText(token));
+const sortValues = new Set(SORT_OPTION_VALUES);
+const TOOLS_CATEGORY_TOKENS = categories.flatMap((category) => getCategoryTokens(category));
 
 function getPageFromSearch() {
   const rawPage = Number.parseInt(new URLSearchParams(window.location.search).get("page") || "1", 10);
@@ -86,6 +84,10 @@ function getProductCategoryTokens(product) {
       category?.slug,
       category?.label,
       category?.title,
+      category?.category_name,
+      category?.categoryName,
+      category?.category_slug,
+      category?.categorySlug,
     ])
     .map((token) => normalizeSearchText(token))
     .filter(Boolean);
@@ -117,7 +119,7 @@ function productMatchesCategory(product, selectedCategory) {
   const selectedCategoryData = getCategoryByName(selectedCategory);
   const selectedTokens = [
     selectedCategory,
-    selectedCategoryData?.slug,
+    ...(selectedCategoryData ? getCategoryTokens(selectedCategoryData) : []),
   ].map(normalizeSearchText).filter(Boolean);
 
   return (product.categories || []).some((category) => {
@@ -126,6 +128,10 @@ function productMatchesCategory(product, selectedCategory) {
       category?.slug,
       category?.label,
       category?.title,
+      category?.category_name,
+      category?.categoryName,
+      category?.category_slug,
+      category?.categorySlug,
     ].map(normalizeSearchText).filter(Boolean);
 
     return categoryTokens.some((categoryToken) => (
@@ -262,6 +268,7 @@ function sanitizePriceFilters(filters, priceBounds) {
 }
 
 function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
+  const { t } = useLanguage();
   const activeRangeHandleRef = useRef(null);
   const [activeRangeHandle, setActiveRangeHandle] = useState("");
   const minBound = priceBounds.min;
@@ -350,7 +357,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
   return (
     <fieldset className="products-price-filter products-price-range">
       <div className="products-price-header">
-        <legend>Цена</legend>
+        <legend>{t("price.title")}</legend>
       </div>
 
       <div
@@ -374,7 +381,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
               step={PRICE_RANGE_STEP}
               value={safeSelectedMin}
               onChange={(event) => updateMinPrice(event.target.value)}
-              aria-label="Минимална цена"
+              aria-label={t("price.min")}
             />
             <input
               type="range"
@@ -383,7 +390,7 @@ function PriceRangeFilter({ filters, onFilterChange, priceBounds }) {
               step={PRICE_RANGE_STEP}
               value={safeSelectedMax}
               onChange={(event) => updateMaxPrice(event.target.value)}
-              aria-label="Максимална цена"
+              aria-label={t("price.max")}
             />
           </>
         )}
@@ -407,17 +414,17 @@ function CatalogFilterPanel({
   sortMode,
   onApply,
 }) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
-  const [draftCategory, setDraftCategory] = useState(selectedCategory);
+  const filterMenuRef = useRef(null);
   const [draftSearchTerm, setDraftSearchTerm] = useState(searchTerm);
   const [draftSortMode, setDraftSortMode] = useState(sortMode);
   const [draftFilters, setDraftFilters] = useState(filters);
   const draftPriceBounds = useMemo(
-    () => getPriceBounds(getCatalogPriceBoundProducts(products, draftCategory, draftSearchTerm)),
-    [draftCategory, draftSearchTerm, products],
+    () => getPriceBounds(getCatalogPriceBoundProducts(products, selectedCategory, draftSearchTerm)),
+    [draftSearchTerm, products, selectedCategory],
   );
   const activeCount = [
-    selectedCategory,
     searchTerm,
     filters.minPrice,
     filters.maxPrice,
@@ -426,8 +433,39 @@ function CatalogFilterPanel({
     sortMode !== "default" ? sortMode : "",
   ].filter(Boolean).length;
 
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    function closeFilters() {
+      setIsOpen(false);
+    }
+
+    function handleDocumentPointerDown(event) {
+      if (filterMenuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      closeFilters();
+    }
+
+    function handleDocumentKeyDown(event) {
+      if (event.key === "Escape") {
+        closeFilters();
+      }
+    }
+
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [isOpen]);
+
   function syncDraftFilters() {
-    setDraftCategory(selectedCategory);
     setDraftSearchTerm(searchTerm);
     setDraftSortMode(sortMode);
     setDraftFilters(filters);
@@ -449,7 +487,6 @@ function CatalogFilterPanel({
   }
 
   function clearDraftFilters() {
-    setDraftCategory("");
     setDraftSearchTerm("");
     setDraftSortMode("default");
     setDraftFilters({
@@ -460,21 +497,8 @@ function CatalogFilterPanel({
     });
   }
 
-  function selectDraftCategory(categoryName) {
-    const nextPriceBounds = getPriceBounds(getCatalogPriceBoundProducts(products, categoryName, draftSearchTerm));
-
-    setDraftCategory(categoryName);
-    onApply({
-      categoryName,
-      filters: sanitizePriceFilters(draftFilters, nextPriceBounds),
-      searchTerm: draftSearchTerm,
-      sortMode: draftSortMode,
-    });
-  }
-
   function applyDraftFilters() {
     onApply({
-      categoryName: draftCategory,
       filters: sanitizePriceFilters(draftFilters, draftPriceBounds),
       searchTerm: draftSearchTerm,
       sortMode: draftSortMode,
@@ -482,72 +506,47 @@ function CatalogFilterPanel({
     setIsOpen(false);
   }
 
+  const sortOptions = getSortOptions(t);
+
   return (
-    <section className="catalog-filter-menu" aria-label="Филтри и категории">
+    <section className="catalog-filter-menu tools-filter-menu" aria-label={t("common.filters")} ref={filterMenuRef}>
       <button
         type="button"
         className={isOpen ? "catalog-filter-toggle is-open" : "catalog-filter-toggle"}
         onClick={toggleFilters}
         aria-expanded={isOpen}
       >
-        <span>Филтри и категории</span>
+        <span>{t("common.filters")}</span>
         {activeCount > 0 && <strong>{activeCount}</strong>}
       </button>
 
       {isOpen && (
-        <div className="catalog-filter-panel">
-          <div className="catalog-filter-column catalog-filter-column--categories">
-            <div className="catalog-filter-title">
-              <span className="products-kicker">Категории</span>
-              <h2>Избери категория</h2>
-            </div>
-
-            <div className="catalog-category-grid">
-              <button
-                type="button"
-                className={draftCategory ? "" : "is-active"}
-                onClick={() => selectDraftCategory("")}
-              >
-                Всички продукти
-              </button>
-              {categories.map((category) => (
-                <button
-                  type="button"
-                  className={category.label === draftCategory ? "is-active" : ""}
-                  onClick={() => selectDraftCategory(category.label)}
-                  key={category.slug}
-                >
-                  {category.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
+        <div className="catalog-filter-panel tools-filter-panel">
           <div className="catalog-filter-column catalog-filter-column--filters">
             <div className="catalog-filter-title">
-              <span className="products-kicker">Филтри</span>
-              <h2>Уточни резултатите</h2>
+              <span className="products-kicker">{t("common.filters")}</span>
+              <h2>{t("tools.refine")}</h2>
             </div>
 
             <div className="catalog-filter-fields">
               <label className="products-search-field">
-                <span>Търсене</span>
+                <span>{t("common.search")}</span>
                 <input
                   type="search"
                   value={draftSearchTerm}
                   onChange={(event) => setDraftSearchTerm(event.target.value)}
-                  placeholder="Търси по име, описание или категория"
+                  placeholder={t("tools.searchPlaceholder")}
         />
               </label>
 
               <label className="products-sort-field">
-                <span>Сортиране</span>
+                <span>{t("common.sort")}</span>
                 <CustomSelect
-                  ariaLabel="Сортиране"
+                  ariaLabel={t("common.sort")}
                   value={draftSortMode}
                   onChange={setDraftSortMode}
                   options={sortOptions}
-                  placeholder="Избери"
+                  placeholder={t("common.choose")}
         />
               </label>
             </div>
@@ -560,10 +559,10 @@ function CatalogFilterPanel({
 
             <div className="catalog-filter-actions">
               <button type="button" className="products-clear-filters" onClick={clearDraftFilters}>
-                Изчисти
+                {t("common.clear")}
               </button>
               <button type="button" className="catalog-filter-search" onClick={applyDraftFilters}>
-                Търсене
+                {t("common.search")}
               </button>
             </div>
           </div>
@@ -571,6 +570,21 @@ function CatalogFilterPanel({
       )}
     </section>
   );
+}
+
+function getSortOptions(t) {
+  return [
+    { value: "name-asc", label: t("sort.nameAsc") },
+    { value: "name-desc", label: t("sort.nameDesc") },
+    { value: "price-asc", label: t("sort.priceAsc") },
+    { value: "price-desc", label: t("sort.priceDesc") },
+  ];
+}
+
+function getCategoryDisplayName(categoryName, t) {
+  const category = getCategoryByName(categoryName);
+
+  return category ? t(`category.${category.slug}`) : categoryName;
 }
 
 function SidebarFilters({
@@ -584,32 +598,34 @@ function SidebarFilters({
   onSearchChange,
   onSortChange,
 }) {
+  const { t } = useLanguage();
   const hasActiveFilters = Boolean(filters.minPrice || filters.maxPrice || filters.size || filters.material || searchTerm);
+  const sortOptions = getSortOptions(t);
 
   return (
-    <section className="sidebar-filter-panel" aria-label="Филтри">
+    <section className="sidebar-filter-panel" aria-label={t("common.filters")}>
       <div>
-        <span className="products-kicker">Филтри</span>
+        <span className="products-kicker">{t("common.filters")}</span>
       </div>
 
       <label className="products-search-field">
-        <span>Търсене</span>
+        <span>{t("common.search")}</span>
         <input
           type="search"
           value={searchTerm}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Търси по име, описание или категория"
+          placeholder={t("tools.searchPlaceholder")}
         />
       </label>
 
       <label className="products-sort-field">
-        <span>Сортиране</span>
+        <span>{t("common.sort")}</span>
         <CustomSelect
-          ariaLabel="Сортиране"
+          ariaLabel={t("common.sort")}
           value={sortMode}
           onChange={onSortChange}
           options={sortOptions}
-          placeholder="Избери"
+          placeholder={t("common.choose")}
         />
       </label>
 
@@ -620,14 +636,14 @@ function SidebarFilters({
       />
 
       <fieldset className="products-chip-filter">
-        <legend>Тип/Размер</legend>
+        <legend>{t("product.size")}</legend>
         <div className="products-filter-chips">
           <button
             type="button"
             className={filters.size ? "" : "is-active"}
             onClick={() => onFilterChange("size", "")}
           >
-            Всички
+            {t("common.all")}
           </button>
           {sizeOptions.length > 0 ? (
             sizeOptions.map((size) => (
@@ -641,14 +657,14 @@ function SidebarFilters({
               </button>
             ))
           ) : (
-            <span className="products-filter-empty">Няма варианти</span>
+            <span className="products-filter-empty">{t("common.noVariants")}</span>
           )}
         </div>
       </fieldset>
 
       {hasActiveFilters && (
         <button type="button" className="products-clear-filters" onClick={onClearFilters}>
-          Изчисти филтрите
+          {t("common.clearFilters")}
         </button>
       )}
     </section>
@@ -669,6 +685,8 @@ function CategorySidebar({
   onSortChange,
   onSelectCategory,
 }) {
+  const { t } = useLanguage();
+
   return (
     <aside className="products-sidebar">
       <SidebarFilters
@@ -683,9 +701,9 @@ function CategorySidebar({
         onSortChange={onSortChange}
       />
 
-      <section className="category-panel" aria-label="Категории">
+      <section className="category-panel" aria-label={t("common.categories")}>
         <div>
-          <span className="products-kicker">Категории</span>
+          <span className="products-kicker">{t("common.categories")}</span>
         </div>
 
         <div className="category-links">
@@ -694,7 +712,7 @@ function CategorySidebar({
             className={selectedCategory ? "" : "is-active"}
             onClick={() => onSelectCategory("")}
           >
-            Всички продукти
+            {t("common.allProducts")}
           </button>
           {categories.map((category) => (
             <button
@@ -703,7 +721,7 @@ function CategorySidebar({
               onClick={() => onSelectCategory(category.label)}
               key={category.slug}
             >
-              {category.label}
+              {t(`category.${category.slug}`)}
             </button>
           ))}
         </div>
@@ -713,8 +731,9 @@ function CategorySidebar({
 }
 
 export default function CategoryPage({ slug }) {
+  const { language, t } = useLanguage();
   const initialCategory = getCategoryBySlug(slug)?.label || "";
-  const [products, setProducts] = useState(() => getCachedProducts() || []);
+  const [products, setProducts] = useState(() => getCachedProducts(language) || []);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [searchTerm, setSearchTerm] = useState(getSearchTermFromSearch);
   const [searchResults, setSearchResults] = useState(null);
@@ -723,14 +742,14 @@ export default function CategoryPage({ slug }) {
   const [productsPerPage, setProductsPerPage] = useState(getPageSizeFromSearch);
   const [filters, setFilters] = useState(getCatalogFiltersFromSearch);
   const [currentPage, setCurrentPage] = useState(getPageFromSearch);
-  const [loading, setLoading] = useState(() => !getCachedProducts());
+  const [loading, setLoading] = useState(() => !getCachedProducts(language));
   const [messages, setMessages] = useState([]);
   const productsMainRef = useRef(null);
   const shouldScrollOnPageChangeRef = useRef(false);
   const historyEntryScrollPersistedRef = useRef(false);
 
   async function refreshProducts() {
-    setProducts(await fetchProducts());
+    setProducts(await fetchProducts({ language }));
   }
 
   const baseFilteredProducts = useMemo(() => {
@@ -855,7 +874,7 @@ export default function CategoryPage({ slug }) {
 
   useEffect(() => {
     async function loadProducts() {
-      if (!getCachedProducts()) {
+      if (!getCachedProducts(language)) {
         setLoading(true);
       }
       setMessages([]);
@@ -870,23 +889,37 @@ export default function CategoryPage({ slug }) {
     }
 
     loadProducts();
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     const trimmedSearchTerm = searchTerm.trim();
+    let isCancelled = false;
 
     if (!trimmedSearchTerm) {
-      setSearchResults(null);
-      setSearchLoading(false);
-      return;
+      window.queueMicrotask(() => {
+        if (!isCancelled) {
+          setSearchResults(null);
+          setSearchLoading(false);
+        }
+      });
+
+      return () => {
+        isCancelled = true;
+      };
     }
 
-    let isCancelled = false;
-    setSearchLoading(true);
+    window.queueMicrotask(() => {
+      if (!isCancelled) {
+        setSearchLoading(true);
+      }
+    });
 
     async function loadSearchResults() {
       try {
-        const nextSearchResults = await searchProducts(trimmedSearchTerm, { limit: Math.max(96, productsPerPage * 4) });
+        const nextSearchResults = await searchProducts(trimmedSearchTerm, {
+          language,
+          limit: Math.max(96, productsPerPage * 4),
+        });
 
         if (!isCancelled) {
           setSearchResults(nextSearchResults);
@@ -908,7 +941,7 @@ export default function CategoryPage({ slug }) {
     return () => {
       isCancelled = true;
     };
-  }, [productsPerPage, searchTerm]);
+  }, [language, productsPerPage, searchTerm]);
 
   function handleProductsPerPageChange(value) {
     persistCurrentScrollPosition();
@@ -925,10 +958,9 @@ export default function CategoryPage({ slug }) {
     setCurrentPage(page);
   }
 
-  function handleCatalogFilterApply({ categoryName, filters: nextFilters, searchTerm: nextSearchTerm, sortMode: nextSortMode }) {
-    const category = getCategoryByName(categoryName);
+  function handleCatalogFilterApply({ filters: nextFilters, searchTerm: nextSearchTerm, sortMode: nextSortMode }) {
+    const category = getCategoryByName(selectedCategory);
     shouldScrollOnPageChangeRef.current = true;
-    setSelectedCategory(categoryName);
     setSearchTerm(nextSearchTerm);
     setSortMode(nextSortMode);
     setFilters(nextFilters);
@@ -966,13 +998,13 @@ export default function CategoryPage({ slug }) {
         <section className="products-shell">
           <div className="products-header">
             <div className="products-heading">
-              <span className="products-kicker">Инструменти</span>
-              <h1>{selectedCategory || "Всички продукти"}</h1>
+              <span className="products-kicker">{t("tools.title")}</span>
+              <h1>{selectedCategory ? getCategoryDisplayName(selectedCategory, t) : t("common.allProducts")}</h1>
             </div>
             <div className="products-filter-footer products-heading-meta">
               <div className="products-filter-meta">
                 <strong>{totalProductsCount}</strong>
-                <span>{totalProductsCount === 1 ? "намерен продукт" : "намерени продукта"}</span>
+                <span>{totalProductsCount === 1 ? t("tools.foundOne") : t("tools.foundMany")}</span>
               </div>
               <ProductPageSizeSelect
                 pageSize={productsPerPage}
@@ -999,9 +1031,9 @@ export default function CategoryPage({ slug }) {
             )}
 
             {loading || searchLoading ? (
-              <div className="products-empty">Зареждане...</div>
+              <div className="products-empty">{t("common.loading")}</div>
             ) : totalProductsCount === 0 ? (
-              <div className="products-empty">Няма намерени продукти в тази категория.</div>
+              <div className="products-empty">{t("tools.empty")}</div>
             ) : (
               <>
                 <div className="products-grid">
@@ -1017,7 +1049,9 @@ export default function CategoryPage({ slug }) {
                           {product.image ? (
                             <img src={product.image} alt={product.name} loading="lazy" decoding="async" />
                           ) : (
-                            <span className="product-card-media-placeholder">{selectedCategory || "Продукт"}</span>
+                            <span className="product-card-media-placeholder">
+                              {selectedCategory ? getCategoryDisplayName(selectedCategory, t) : t("common.product")}
+                            </span>
                           )}
                         </span>
                       </a>
@@ -1028,12 +1062,12 @@ export default function CategoryPage({ slug }) {
 
                         <div className="product-card-footer">
                           {product.hasVariants ? (
-                            <span className="product-card-footer-info product-card-footer-info--variant">Натисни преглед за още подробности</span>
+                            <span className="product-card-footer-info product-card-footer-info--variant">{t("common.viewDetailsPrompt")}</span>
                           ) : (
                             <strong>{formatPrice(product.price)}</strong>
                           )}
 
-                          <a href={productPath} className="product-card-action">Преглед</a>
+                          <a href={productPath} className="product-card-action">{t("common.view")}</a>
                         </div>
                       </div>
                     </article>

@@ -5,27 +5,42 @@ import sliderImageTwo from "../../assets/hero/slider1.jpg";
 import sliderImageThree from "../../assets/hero/slider-4.jpg";
 import sliderImageFour from "../../assets/hero/метчик-1.jpg";
 import sliderImageFive from "../../assets/hero/струг.jpg";
+import { useLanguage } from "../../utils/language";
 
 const AUTOPLAY_MS = 4000;
-const DEFAULT_SLIDE_CONTENT = {
-  eyebrow: "EXCITE COMPANY",
-  title: "Технически консумативи",
-  subtitle: "Практични предложения за металообработка и монтаж.",
-  button_text: "Разгледай продукти",
-  button_url: "/products",
+const fallbackHeroCopy = {
+  bg: {
+    aria: "Акценти",
+    eyebrow: "EXCITE COMPANY",
+    title: "Технически консумативи",
+    subtitle: "Практични предложения за металообработка и монтаж.",
+    button_text: "Разгледай продукти",
+    error: "Временен проблем със зареждането на банерите.",
+  },
+  en: {
+    aria: "Highlights",
+    eyebrow: "EXCITE COMPANY",
+    title: "Technical consumables",
+    subtitle: "Practical solutions for metalworking and assembly.",
+    button_text: "Browse products",
+    error: "There is a temporary problem loading the banners.",
+  },
+  de: {
+    aria: "Akzente",
+    eyebrow: "EXCITE COMPANY",
+    title: "Technische Verbrauchsmaterialien",
+    subtitle: "Praktische Lösungen für Metallbearbeitung und Montage.",
+    button_text: "Produkte ansehen",
+    error: "Beim Laden der Banner ist vorübergehend ein Problem aufgetreten.",
+  },
 };
-const DEFAULT_SLIDES = [
+const fallbackHeroImages = [
   sliderImageOne,
   sliderImageTwo,
   sliderImageThree,
   sliderImageFour,
   sliderImageFive,
-].map((image_url, index) => ({
-  ...DEFAULT_SLIDE_CONTENT,
-  id: `fallback-hero-${index}`,
-  image_url,
-  sort_order: index,
-}));
+];
 
 function getRenderedImageUrl(slide, brokenImages) {
   if (!slide) {
@@ -39,8 +54,46 @@ function getRenderedImageUrl(slide, brokenImages) {
   return slide.image_url || sliderImageOne;
 }
 
+function hasCyrillicText(value) {
+  return /[\u0400-\u04ff]/.test(String(value || ""));
+}
+
+function getDisplaySlide(slide, heroCopy, language) {
+  if (!slide) {
+    return slide;
+  }
+
+  const slideText = [slide.title, slide.subtitle, slide.button_text].join(" ");
+  const shouldUseFallbackText = language !== "bg" && hasCyrillicText(slideText);
+
+  if (!shouldUseFallbackText) {
+    return slide;
+  }
+
+  return {
+    ...slide,
+    eyebrow: heroCopy.eyebrow,
+    title: heroCopy.title,
+    subtitle: heroCopy.subtitle,
+    button_text: heroCopy.button_text,
+    button_url: slide.button_url || "/products",
+  };
+}
+
 export default function HeroSlider() {
-  const [items, setItems] = useState(() => getCachedHomeBanners() || DEFAULT_SLIDES);
+  const { language } = useLanguage();
+  const heroCopy = fallbackHeroCopy[language] || fallbackHeroCopy.bg;
+  const defaultSlides = useMemo(() => fallbackHeroImages.map((image_url, index) => ({
+    eyebrow: heroCopy.eyebrow,
+    title: heroCopy.title,
+    subtitle: heroCopy.subtitle,
+    button_text: heroCopy.button_text,
+    button_url: "/products",
+    id: `fallback-hero-${language}-${index}`,
+    image_url,
+    sort_order: index,
+  })), [heroCopy, language]);
+  const [items, setItems] = useState(() => getCachedHomeBanners(language) || defaultSlides);
   const [error, setError] = useState(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const [brokenImages, setBrokenImages] = useState({});
@@ -48,19 +101,27 @@ export default function HeroSlider() {
   useEffect(() => {
     let isMounted = true;
 
+    window.queueMicrotask(() => {
+      if (isMounted) {
+        setItems(getCachedHomeBanners(language) || defaultSlides);
+        setActiveSlide(0);
+        setBrokenImages({});
+      }
+    });
+
     async function loadHomeBanner() {
       setError(null);
 
       try {
-        const normalized = await fetchHomeBanners();
+        const normalized = await fetchHomeBanners({ language });
 
         if (isMounted) {
-          setItems(normalized.length > 0 ? normalized : DEFAULT_SLIDES);
+          setItems(normalized.length > 0 ? normalized : defaultSlides);
           setActiveSlide(0);
         }
       } catch (loadError) {
         if (isMounted) {
-          setItems(DEFAULT_SLIDES);
+          setItems(defaultSlides);
           setError(loadError);
           setActiveSlide(0);
         }
@@ -72,16 +133,17 @@ export default function HeroSlider() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [defaultSlides, language]);
 
-  const slides = useMemo(() => (items.length > 0 ? items : DEFAULT_SLIDES), [items]);
+  const slides = useMemo(() => (items.length > 0 ? items : defaultSlides), [defaultSlides, items]);
   const visibleSlideIndex = activeSlide % slides.length;
   const currentSlide = slides[visibleSlideIndex] || slides[0];
+  const displaySlide = getDisplaySlide(currentSlide, heroCopy, language);
 
   useEffect(() => {
     const nextSlide = slides[(visibleSlideIndex + 1) % slides.length];
     const imageUrls = [
-      getRenderedImageUrl(currentSlide, brokenImages),
+      getRenderedImageUrl(displaySlide, brokenImages),
       getRenderedImageUrl(nextSlide, brokenImages),
     ].filter(Boolean);
 
@@ -90,7 +152,7 @@ export default function HeroSlider() {
       preload.decoding = "async";
       preload.src = imageUrl;
     });
-  }, [brokenImages, currentSlide, slides, visibleSlideIndex]);
+  }, [brokenImages, displaySlide, slides, visibleSlideIndex]);
 
   useEffect(() => {
     if (slides.length <= 1) {
@@ -104,30 +166,30 @@ export default function HeroSlider() {
     return () => window.clearInterval(timer);
   }, [slides.length]);
   return (
-    <section className="hero-slider" aria-label="Акценти">
+    <section className="hero-slider" aria-label={heroCopy.aria}>
       <div className="hero-media">
         <img
           className="hero-image is-active"
-          src={getRenderedImageUrl(currentSlide, brokenImages)}
+          src={getRenderedImageUrl(displaySlide, brokenImages)}
           loading="eager"
           fetchPriority="high"
           decoding="async"
           alt=""
           onError={() => setBrokenImages((current) => (
-            current[currentSlide.id] ? current : { ...current, [currentSlide.id]: true }
+            current[displaySlide.id] ? current : { ...current, [displaySlide.id]: true }
           ))}
-          key={currentSlide.id}
+          key={displaySlide.id}
         />
       </div>
 
       <div className="hero-slide-content">
-        {currentSlide.eyebrow && <span>{currentSlide.eyebrow}</span>}
-        <h1>{currentSlide.title}</h1>
-        {currentSlide.subtitle && <p>{currentSlide.subtitle}</p>}
-        {currentSlide.button_url && currentSlide.button_text ? (
-          <a href={currentSlide.button_url} className="hero-slide-button">{currentSlide.button_text}</a>
+        {displaySlide.eyebrow && <span>{displaySlide.eyebrow}</span>}
+        <h1>{displaySlide.title}</h1>
+        {displaySlide.subtitle && <p>{displaySlide.subtitle}</p>}
+        {displaySlide.button_url && displaySlide.button_text ? (
+          <a href={displaySlide.button_url} className="hero-slide-button">{displaySlide.button_text}</a>
         ) : null}
-        {error ? <p>Временен проблем със зареждането на банерите.</p> : null}
+        {error ? <p>{heroCopy.error}</p> : null}
       </div>
 
       <div className="hero-dots" aria-hidden="true">

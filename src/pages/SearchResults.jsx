@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeErrors } from "../api/client";
 import { getCachedProducts, searchProducts } from "../api/products";
 import ProductPagination, { ProductPageSizeSelect } from "../components/products/ProductPagination";
+import { useLanguage } from "../utils/language";
 import { DEFAULT_PRODUCT_PAGE_SIZE, getPageSizeFromSearch } from "../utils/pagination";
 import { formatPrice, stripHtml } from "../utils/products";
 import { getProductUrl, normalizeSearchText } from "../utils/search";
@@ -31,17 +32,25 @@ function getProductSearchText(product) {
 }
 
 export default function SearchResults() {
+  const { language, t } = useLanguage();
   const [query, setQuery] = useState(getSearchQuery());
   const [products, setProducts] = useState([]);
   const [currentPage, setCurrentPage] = useState(getPageFromSearch);
   const [productsPerPage, setProductsPerPage] = useState(getPageSizeFromSearch);
-  const [loading, setLoading] = useState(() => !getCachedProducts());
+  const [loading, setLoading] = useState(() => !getCachedProducts(language));
   const [messages, setMessages] = useState([]);
   const productsMainRef = useRef(null);
   const totalProductsCount = products.length;
   const totalPages = Math.max(1, Math.ceil(products.length / productsPerPage));
   const visibleCurrentPage = Math.min(currentPage, totalPages);
   const paginatedProducts = products.slice((visibleCurrentPage - 1) * productsPerPage, visibleCurrentPage * productsPerPage);
+  const emptyQuerySuffix = query
+    ? {
+      bg: ` за "${query}"`,
+      en: ` for "${query}"`,
+      de: ` für "${query}"`,
+    }[language] || ` "${query}"`
+    : "";
 
   const refreshSearchProducts = useCallback(async (searchQuery = query) => {
     if (!searchQuery) {
@@ -51,9 +60,9 @@ export default function SearchResults() {
 
     const normalizedQuery = normalizeSearchText(searchQuery);
     const searchLimit = Math.max(48, productsPerPage * 6);
-    const nextProducts = await searchProducts(searchQuery, { limit: searchLimit });
+    const nextProducts = await searchProducts(searchQuery, { language, limit: searchLimit });
     setProducts(nextProducts.filter((product) => getProductSearchText(product).includes(normalizedQuery)));
-  }, [productsPerPage, query]);
+  }, [language, productsPerPage, query]);
 
   useEffect(() => {
     function handleNavigation() {
@@ -106,7 +115,7 @@ export default function SearchResults() {
         return;
       }
 
-      if (!getCachedProducts()) {
+      if (!getCachedProducts(language)) {
         setLoading(true);
       }
       setMessages([]);
@@ -142,13 +151,13 @@ export default function SearchResults() {
       <div className="products-layout">
         <section className="products-shell">
           <div className="products-header">
-            <span className="products-kicker">Търсене</span>
-            <h1>{query ? `Продукти с името "${query}"` : "Търсене на продукти"}</h1>
-            <p>Резултатите се търсят по име, категория, описание и код на продукта.</p>
+            <span className="products-kicker">{t("search.heading")}</span>
+            <h1>{query ? t("search.queryTitle", { query }) : t("search.title")}</h1>
+            <p>{t("search.subtitle")}</p>
             <div className="products-filter-footer products-heading-meta">
               <div className="products-filter-meta">
                 <strong>{totalProductsCount}</strong>
-                <span>{totalProductsCount === 1 ? "намерен продукт" : "намерени продукта"}</span>
+                <span>{totalProductsCount === 1 ? t("tools.foundOne") : t("tools.foundMany")}</span>
               </div>
               <ProductPageSizeSelect
                 pageSize={productsPerPage}
@@ -167,12 +176,12 @@ export default function SearchResults() {
             )}
 
             {loading ? (
-              <div className="products-empty">Зареждане...</div>
+              <div className="products-empty">{t("common.loading")}</div>
             ) : totalProductsCount === 0 ? (
               <div className="products-empty search-empty">
-                <h2>Няма намерени резултати{query ? ` за "${query}"` : ""}.</h2>
-                <p>Опитайте с друго име или разгледайте всички продукти.</p>
-                <a href="/category" className="products-empty-link">Към продуктите</a>
+                <h2>{t("search.emptyTitle", { query: emptyQuerySuffix })}</h2>
+                <p>{t("search.emptyBody")}</p>
+                <a href="/category" className="products-empty-link">{t("search.goProducts")}</a>
               </div>
             ) : (
               <>
@@ -189,7 +198,7 @@ export default function SearchResults() {
                           {product.image ? (
                             <img src={product.image} alt={product.name} loading="lazy" decoding="async" />
                           ) : (
-                            <span className="product-card-media-placeholder">Продукт</span>
+                            <span className="product-card-media-placeholder">{t("common.product")}</span>
                           )}
                         </span>
                       </a>
@@ -200,12 +209,12 @@ export default function SearchResults() {
 
                         <div className="product-card-footer">
                           {product.hasVariants ? (
-                            <span className="product-card-footer-info product-card-footer-info--variant">Натисни преглед за още подробности</span>
+                            <span className="product-card-footer-info product-card-footer-info--variant">{t("common.viewDetailsPrompt")}</span>
                           ) : (
                             <strong>{formatPrice(product.price)}</strong>
                           )}
 
-                          <a href={productUrl} className="product-card-action">Преглед</a>
+                          <a href={productUrl} className="product-card-action">{t("common.view")}</a>
                         </div>
                       </div>
                     </article>

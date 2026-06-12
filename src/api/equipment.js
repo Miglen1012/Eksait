@@ -1,45 +1,55 @@
-import { apiRequest } from "./client";
-import { fetchProducts } from "./products";
+import { apiRequest, withLanguageParam } from "./client";
 import { normalizeProducts } from "../utils/products";
-import { isEquipmentProduct } from "../utils/equipment";
+import { getStoredLanguage } from "../utils/language";
 
-let equipmentCache = null;
-let equipmentPromise = null;
+const equipmentCache = new Map();
+const equipmentPromises = new Map();
 
-export function getCachedEquipmentProducts() {
-  return equipmentCache;
+export function getCachedEquipmentProducts(language = getStoredLanguage()) {
+  return equipmentCache.get(language) || null;
 }
 
-export function clearEquipmentCache() {
-  equipmentCache = null;
-  equipmentPromise = null;
+export function clearEquipmentCache(language) {
+  if (language) {
+    equipmentCache.delete(language);
+    equipmentPromises.delete(language);
+    return;
+  }
+
+  equipmentCache.clear();
+  equipmentPromises.clear();
 }
 
-export async function fetchEquipmentProducts({ force = false } = {}) {
-  if (!force && equipmentCache) {
-    return equipmentCache;
+export async function fetchEquipmentProducts({ force = false, language = getStoredLanguage() } = {}) {
+  if (!force && equipmentCache.has(language)) {
+    return equipmentCache.get(language);
   }
 
-  if (!force && equipmentPromise) {
-    return equipmentPromise;
+  if (!force && equipmentPromises.has(language)) {
+    return equipmentPromises.get(language);
   }
 
-  equipmentPromise = (async () => {
-    try {
-      const data = await apiRequest("/api/equipment");
-      equipmentCache = normalizeProducts(data);
-      return equipmentCache;
-    } catch (error) {
-      if (error?.status !== 404) {
-        throw error;
-      }
+  const equipmentPromise = apiRequest(withLanguageParam("/api/equipment", language))
+    .then((data) => {
+      const products = normalizeProducts(data, { language });
+      equipmentCache.set(language, products);
+      return products;
+    })
+    .finally(() => {
+      equipmentPromises.delete(language);
+    });
 
-      equipmentCache = (await fetchProducts({ force })).filter(isEquipmentProduct);
-      return equipmentCache;
-    }
-  })().finally(() => {
-    equipmentPromise = null;
-  });
-
+  equipmentPromises.set(language, equipmentPromise);
   return equipmentPromise;
+}
+
+export async function searchEquipmentProducts(query, { limit = 24, language = getStoredLanguage() } = {}) {
+  const trimmedQuery = String(query || "").trim();
+
+  if (!trimmedQuery) {
+    return [];
+  }
+
+  const data = await apiRequest(withLanguageParam(`/api/equipment/search?q=${encodeURIComponent(trimmedQuery)}&limit=${limit}`, language));
+  return normalizeProducts(data, { language });
 }

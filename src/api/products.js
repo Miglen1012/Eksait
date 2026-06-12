@@ -1,45 +1,54 @@
-import { apiRequest } from "./client";
+import { apiRequest, withLanguageParam } from "./client";
 import { normalizeProducts } from "../utils/products";
+import { getStoredLanguage } from "../utils/language";
 import { normalizeSearchText } from "../utils/search";
 
-let productsCache = null;
-let productsPromise = null;
+const productsCache = new Map();
+const productsPromises = new Map();
 
-export function getCachedProducts() {
-  return productsCache;
+export function getCachedProducts(language = getStoredLanguage()) {
+  return productsCache.get(language) || null;
 }
 
-export function clearProductsCache() {
-  productsCache = null;
-  productsPromise = null;
+export function clearProductsCache(language) {
+  if (language) {
+    productsCache.delete(language);
+    productsPromises.delete(language);
+    return;
+  }
+
+  productsCache.clear();
+  productsPromises.clear();
 }
 
-export async function fetchProducts({ force = false } = {}) {
-  if (!force && productsCache) {
-    return productsCache;
+export async function fetchProducts({ force = false, language = getStoredLanguage() } = {}) {
+  if (!force && productsCache.has(language)) {
+    return productsCache.get(language);
   }
 
-  if (!force && productsPromise) {
-    return productsPromise;
+  if (!force && productsPromises.has(language)) {
+    return productsPromises.get(language);
   }
 
-  productsPromise = apiRequest("/api/products")
+  const productsPromise = apiRequest(withLanguageParam("/api/products", language))
     .then((data) => {
-      productsCache = normalizeProducts(data);
-      return productsCache;
+      const products = normalizeProducts(data, { language });
+      productsCache.set(language, products);
+      return products;
     })
     .finally(() => {
-      productsPromise = null;
+      productsPromises.delete(language);
     });
 
+  productsPromises.set(language, productsPromise);
   return productsPromise;
 }
 
-export function prefetchProducts() {
-  return fetchProducts().catch(() => null);
+export function prefetchProducts(language = getStoredLanguage()) {
+  return fetchProducts({ language }).catch(() => null);
 }
 
-export async function searchProducts(query, { limit = 24 } = {}) {
+export async function searchProducts(query, { limit = 24, language = getStoredLanguage() } = {}) {
   const trimmedQuery = String(query || "").trim();
 
   if (!trimmedQuery) {
@@ -47,8 +56,8 @@ export async function searchProducts(query, { limit = 24 } = {}) {
   }
 
   try {
-    const data = await apiRequest(`/api/products/search?q=${encodeURIComponent(trimmedQuery)}&limit=${limit}`);
-    return normalizeProducts(data);
+    const data = await apiRequest(withLanguageParam(`/api/products/search?q=${encodeURIComponent(trimmedQuery)}&limit=${limit}`, language));
+    return normalizeProducts(data, { language });
   } catch (error) {
     if (error?.status !== 404) {
       throw error;
@@ -56,6 +65,6 @@ export async function searchProducts(query, { limit = 24 } = {}) {
   }
 
   const normalizedQuery = normalizeSearchText(trimmedQuery);
-  const products = await fetchProducts();
+  const products = await fetchProducts({ language });
   return products.filter((product) => String(product.searchText || "").includes(normalizedQuery)).slice(0, limit);
 }
